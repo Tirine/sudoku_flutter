@@ -28,4 +28,18 @@ void main() {
     expect(sudoku1.solution, sudoku2.solution);
     expect(sudoku1.board, sudoku2.board);
   });
+
+  test('Sudoku speed test', () async {
+    final t0 = DateTime.now();
+    for (var i = 0; i < 2; i++) {
+      final Sudoku sudoku =
+          Sudoku(seed: 1000 + i, difficulty: SudokuDifficulty.extreme);
+      await sudoku.init();
+    }
+    final t1 = DateTime.now();
+    print(t1.millisecondsSinceEpoch - t0.millisecondsSinceEpoch);
+
+    // expect(sudoku1.solution, sudoku2.solution);
+    // expect(sudoku1.board, sudoku2.board);
+  });
 }

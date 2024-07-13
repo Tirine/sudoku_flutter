@@ -13,7 +13,7 @@ class Sudoku {
   final SudokuDifficulty _difficulty;
   bool _initialised = false;
   int _seed;
-  Random _random = Random();
+  late int Function() _random;
   Board _sudoku = createEmpty();
   Board _solution = createEmpty();
   int _sleep = 0;
@@ -28,7 +28,8 @@ class Sudoku {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
-    _random = Random(_offsetSeed());
+
+    _random = mulberry32(_offsetSeed());
     if (initialise) {
       init();
     }
@@ -38,8 +39,19 @@ class Sudoku {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
-    _random = Random(_offsetSeed());
+    _random = mulberry32(_offsetSeed());
   }
+
+  int Function() mulberry32(a) {
+    int t;
+    return () {
+      t = a += 0x6D2B79F5;
+      t = (t ^ t >>> 15) * (t | 1);
+      t ^= t + ((t ^ t >> 7) * (t | 61));
+      return ((t ^ t >> 14) >>> 0).toUnsigned(32);
+    };
+  }
+  // const randomFract = mulberry32(seed);
 
   int _offsetSeed() {
     return seed + (314159 * _difficulty.index);
@@ -67,9 +79,34 @@ class Sudoku {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
-    _random = Random(_offsetSeed());
+    _random = mulberry32(_offsetSeed());
     _initialised = true;
     Board sudoku = createEmpty();
+    if (_seed < 100) {
+      int choose = _rand() - 1;
+      int direction = (_rand() % 2) == 0 ? -1 : 1;
+      if (_seed < 25) {
+        for (int i = 1; i <= sudoku[choose].length; i++) {
+          sudoku[choose][i - 1] = (10 + (i * direction)) % 10;
+        }
+      } else if (_seed < 50) {
+        for (int i = 1; i <= sudoku[choose].length; i++) {
+          sudoku[i - 1][choose] = (10 + (i * direction)) % 10;
+        }
+      } else if (_seed < 75) {
+        for (int i = 1; i <= sudoku[choose].length; i++) {
+          sudoku[((choose % 3) * 3) + ((i - 1) / 3).floor()]
+                  [((choose / 3).floor() * 3) + (i - 1) % 3] =
+              (10 + (i * direction)) % 10;
+        }
+      } else {
+        int upDown = (_rand() % 2) == 0 ? -1 : 1;
+        for (int i = 1; i <= sudoku[choose].length; i++) {
+          sudoku[((upDown * i - 1 + choose)) % 9][(((i) - 1)) % 9] =
+              (10 + (i * direction)) % 10;
+        }
+      }
+    }
     Board solution;
     while (!(await solver(sudoku, offset: _rand))) {
       sudoku = createEmpty();
@@ -119,7 +156,7 @@ class Sudoku {
   Board get solution => _solution;
 
   int _rand() {
-    return _random.nextInt(9) + 1;
+    return (_random() % 9) + 1;
   }
 
   bool verifyCell(row, column) {

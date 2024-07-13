@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:loader_overlay/loader_overlay.dart';
 import 'package:sudoku_flutter/sudoku.dart';
 
 void main() {
@@ -47,7 +48,7 @@ class MyApp extends StatelessWidget {
             onBackground: Colors.white),
         useMaterial3: true,
       ),
-      home: const SudokuPage(title: 'Sudoku'),
+      home: const LoaderOverlay(child: SudokuPage(title: 'Sudoku')),
     );
   }
 }
@@ -120,8 +121,10 @@ class _SudokuPageState extends State<SudokuPage> {
     });
   }
 
-  void _initBoard() {
+  void _initBoard(BuildContext context) {
+    context.loaderOverlay.show();
     update(() {
+      print(context.loaderOverlay.visible);
       // This call to update tells the Flutter framework that something has
       // changed in this State, which causes it to rerun the build method below
       // so that the display can reflect the updated values. If we changed
@@ -148,6 +151,9 @@ class _SudokuPageState extends State<SudokuPage> {
             });
           });
         });
+        print(context.loaderOverlay.visible);
+        context.loaderOverlay.hide();
+        print('!${!context.loaderOverlay.visible}');
       });
     });
   }
@@ -158,12 +164,41 @@ class _SudokuPageState extends State<SudokuPage> {
     }
   }
 
+  void addToCell(row, column, number) {
+    if (note) {
+      if (instance.board[row][column] == 0) {
+        if (number == 0) {
+          values[row][column] = ' ';
+        } else {
+          var list = List<int>.from(values[row][column].codeUnits);
+          list.sort();
+          int unit = '$number'.codeUnits[0];
+          if (list.contains(unit)) {
+            list.remove(unit);
+          } else {
+            list.add(unit);
+          }
+          values[row][column] = String.fromCharCodes(list);
+          print('Noted: "${values[row][column]}"');
+        }
+      }
+    } else {
+      if (number == 0 || number == instance.board[row][column]) {
+        values[row][column] = ' ';
+        instance.board[row][column] = 0;
+      } else {
+        values[row][column] = '$number';
+        instance.board[row][column] = number;
+      }
+    }
+  }
+
   void selectCell(row, column, context) {
     update(() {
       if (selectedNum >= 0) {
-        values[row][column] = selectedNum == 0 ? '' : '$selectedNum';
-        instance.board[row][column] = selectedNum;
+        addToCell(row, column, selectedNum);
       } else {
+        // Selection
         if (selectedRow == row && selectedCol == column) {
           selectedRow = -1;
           selectedCol = -1;
@@ -179,8 +214,7 @@ class _SudokuPageState extends State<SudokuPage> {
   void selectNumber(number, context) {
     update(() {
       if (selectedRow >= 0) {
-        values[selectedRow][selectedCol] = selectedNum == 0 ? '' : '$number';
-        instance.board[selectedRow][selectedCol] = number;
+        addToCell(selectedRow, selectedCol, number);
       } else {
         if (selectedNum == number) {
           selectedNum = -1;
@@ -220,7 +254,7 @@ class _SudokuPageState extends State<SudokuPage> {
         if (value != null && value != DialogOptions.doNothing) {
           if (value == DialogOptions.restartThis) {
           } else {
-            _initBoard();
+            _initBoard(context);
           }
         }
       });
@@ -242,19 +276,13 @@ class _SudokuPageState extends State<SudokuPage> {
       }
     }
 
-    for (var i = 0; i < 3; i++) {
-      for (var entry in boards.entries) {
-        if (entry.value.length <= i) {
-          Future<Sudoku> created =
-              Sudoku.create(difficulty: entry.key, sleep: i);
-          created.then((value) {
-            print('created $i of ${entry.key.name}');
-          });
+    for (var entry in boards.entries) {
+      for (var i = entry.value.length; i < 3; i++) {
+        Future<Sudoku> created = Sudoku.create(difficulty: entry.key, sleep: i);
+        created.then(((board) {
           entry.value.add(created);
-        }
-      }
-      for (var entry in boards.entries) {
-        await Future.wait(entry.value);
+          // print('Added ${entry.key}, ${entry.value.length}');
+        }));
       }
     }
   }
@@ -307,15 +335,37 @@ class _SudokuPageState extends State<SudokuPage> {
                                 : (selectedRow == row && selectedCol == column)
                                     ? addSelection()
                                     : null),
-                        child: Text(
-                          values[row][column],
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: fontSize,
-                              color: enabled[row][column]
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context).colorScheme.tertiary),
-                        ))),
+                        child: (enabled[row][column] &&
+                                values[row][column].length > 1)
+                            ? Table(
+                                children: List<TableRow>.generate(
+                                    3,
+                                    (intRow) => TableRow(
+                                        children: List<Text>.generate(
+                                            3,
+                                            (intCol) => Text(
+                                                values[row][column].contains(
+                                                        '${(intRow * 3 + intCol) + 1}')
+                                                    ? '${(intRow * 3 + intCol) + 1}'
+                                                    : ' ',
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  fontSize: fontSize / 3,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary,
+                                                ))))))
+                            : Text(
+                                values[row][column],
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: fontSize,
+                                    color: enabled[row][column]
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .tertiary),
+                              ))),
                 growable: false),
             decoration: BoxDecoration(
                 border: row % 3 == 2
@@ -361,7 +411,6 @@ class _SudokuPageState extends State<SudokuPage> {
             .toList(),
         onChanged: (value) {
           update(() {
-            print(value);
             if (value != selectedDifficulty &&
                 value != null &&
                 boards[value] != null) {
@@ -427,11 +476,11 @@ class _SudokuPageState extends State<SudokuPage> {
                   onSubmitted: (value) async {
                     int? newSeed = int.tryParse(value);
                     if (newSeed != null) {
+                      context.loaderOverlay.show();
                       instance = await Sudoku.create(
                           seed: newSeed, difficulty: selectedDifficulty);
-                      update(() {
-                        _initBoard();
-                      });
+
+                      _initBoard(context);
                     }
                   }),
               ...(mediaSize.height < mediaSize.width ? secondRow : []),
@@ -481,7 +530,7 @@ class _SudokuPageState extends State<SudokuPage> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _initBoard,
+        onPressed: () => _initBoard(context),
         tooltip: 'Start new',
         child: const Icon(Icons.restart_alt),
       ), // This trailing comma makes auto-formatting nicer for build methods.
