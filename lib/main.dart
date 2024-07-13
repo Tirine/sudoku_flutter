@@ -292,12 +292,12 @@ class _SudokuPageState extends State<SudokuPage> {
     fillLists();
     Color? addShade(
             {Color? baseColor = Colors.transparent, transparancy = 0.85}) =>
-        Color.lerp(Theme.of(context).colorScheme.onBackground, baseColor,
+        Color.lerp(Theme.of(context).colorScheme.onSurface, baseColor,
             transparancy);
 
     Color? addSelection(
             {Color? baseColor = Colors.transparent, transparancy = 0.5}) =>
-        Color.lerp(Theme.of(context).colorScheme.onBackground, baseColor,
+        Color.lerp(Theme.of(context).colorScheme.onSurface, baseColor,
             transparancy);
 
     Color? addHighlight(
@@ -380,7 +380,7 @@ class _SudokuPageState extends State<SudokuPage> {
         (index) => ElevatedButton(
               onPressed: () => selectNumber(index + 1, context),
               style: ButtonStyle(
-                  backgroundColor: MaterialStateProperty.resolveWith<Color?>(
+                  backgroundColor: WidgetStateProperty.resolveWith<Color?>(
                       (states) =>
                           selectedNum == (index + 1) ? addSelection() : null)),
               child: Text(
@@ -394,7 +394,7 @@ class _SudokuPageState extends State<SudokuPage> {
               note = !note;
             }),
         style: ButtonStyle(
-            backgroundColor: MaterialStateProperty.resolveWith<Color?>(
+            backgroundColor: WidgetStateProperty.resolveWith<Color?>(
                 (states) => (note ? addSelection() : null))),
         child: Icon(
           Icons.edit,
@@ -505,7 +505,7 @@ class _SudokuPageState extends State<SudokuPage> {
                   onPressed: () => selectNumber(0, context),
                   style: ButtonStyle(
                       backgroundColor:
-                          MaterialStateProperty.resolveWith<Color?>((states) =>
+                          WidgetStateProperty.resolveWith<Color?>((states) =>
                               (selectedNum == 0 ? addSelection() : null))),
                   child: Icon(
                     Icons.highlight_remove,
