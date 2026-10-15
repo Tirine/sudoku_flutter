@@ -8,7 +8,7 @@ import 'package:sudoku_flutter/sudoku_logic_solver.dart';
 
 typedef Board = List<List<int>>;
 
-enum SudokuDifficulty { easy, medium, hard, extreme, almostImpossible }
+enum SudokuDifficulty { easy, medium, hard, extreme }
 
 class Sudoku {
   final SudokuDifficulty _difficulty;
@@ -113,17 +113,34 @@ class Sudoku {
         }
       }
     }
-    Board solution;
+    if (_seed == 314159265) {
+      const piList = [3, 1, 4, 1, 5, 9, 2, 6, 5];
+      for (int i = 0; i < piList.length; i++) {
+        sudoku[i][i] = piList[i];
+      }
+    }
+    if (_seed == 271828182) {
+      const eList = [2, 7, 1, 8, 2, 8, 1, 8, 2];
+      for (int i = 0; i < eList.length; i++) {
+        sudoku[i][i] = eList[i];
+      }
+    }
+    if (_seed == 123456789) {
+      const counter = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+      for (int i = 0; i < counter.length; i++) {
+        sudoku[i][i] = counter[i];
+      }
+    }
+
+    Board solution = cloneBoard(sudoku);
     while (!(await solver(sudoku, offset: _rand))) {
-      sudoku = createEmpty();
+      sudoku = cloneBoard(solution);
     }
     solution = cloneBoard(sudoku);
     bool generated = false;
     int maxDepth = 5000;
     int minFill = 17;
-    if (_difficulty == SudokuDifficulty.almostImpossible) {
-      minFill = 14;
-    } else if (_difficulty != SudokuDifficulty.extreme) {
+    if (_difficulty != SudokuDifficulty.extreme) {
       minFill += 16;
       if (_difficulty == SudokuDifficulty.easy) {
         minFill += 16;
@@ -136,8 +153,7 @@ class Sudoku {
         generated = await _generateBoard(sudoku,
             maxDepth: maxDepth,
             minFilled: minFill,
-            requireLogicalSolve:
-                _difficulty == SudokuDifficulty.almostImpossible);
+            requireLogicalSolve: _difficulty == SudokuDifficulty.extreme);
       } catch (e) {
         maxDepth *= 2;
         _debugPrint('Retry...');

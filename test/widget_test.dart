@@ -105,7 +105,7 @@ void main() {
     );
     expect(
       difficultyMenu.items!.map((item) => (item.child as Text).data),
-      contains('Almost-impossible'),
+      contains('Extreme'),
     );
     expect(find.byKey(const ValueKey('seed-input')), findsOneWidget);
     expect(find.byKey(const ValueKey('notes-toggle')), findsOneWidget);
@@ -199,7 +199,7 @@ void main() {
     expect(find.text('00:31'), findsOneWidget);
     expect(find.text('00:52'), findsOneWidget);
     expect(find.text('01:24'), findsOneWidget);
-    expect(find.text('No times yet'), findsNWidgets(3));
+    expect(find.text('No times yet'), findsNWidgets(2));
   });
 
   testWidgets('changing difficulty uses a preloaded puzzle', (tester) async {

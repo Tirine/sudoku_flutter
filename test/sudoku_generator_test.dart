@@ -16,7 +16,7 @@ void main() {
     );
     almostImpossiblePuzzle = await Sudoku.create(
       seed: 789012,
-      difficulty: SudokuDifficulty.almostImpossible,
+      difficulty: SudokuDifficulty.extreme,
     );
   });
 
@@ -62,6 +62,24 @@ void main() {
     expect(replay.solution, randomPuzzle.solution);
   });
 
+  test('seeds 76 and 100 keep a custom clue in every row and column', () async {
+    for (final seed in [76, 100]) {
+      final puzzle = await Sudoku.create(seed: seed);
+      expect(
+        puzzle.board.every((row) => row.any((value) => value != 0)),
+        isTrue,
+        reason: 'Seed $seed should retain its custom row clues.',
+      );
+      expect(
+        List.generate(9, (column) => column).every(
+          (column) => puzzle.board.any((row) => row[column] != 0),
+        ),
+        isTrue,
+        reason: 'Seed $seed should retain its custom column clues.',
+      );
+    }
+  });
+
   test('extreme puzzle is minimal while retaining a unique solution', () {
     expect(_countSolutions(extremePuzzle.board), 1);
 
@@ -82,7 +100,9 @@ void main() {
     }
   });
 
-  test('almost-impossible puzzle is unique and solvable without guessing', () {
+  test(
+      'almost-impossible (removed, logic in extreme) puzzle is unique and solvable without guessing',
+      () {
     expect(_countSolutions(almostImpossiblePuzzle.board), 1);
     expect(SudokuLogicSolver().canSolve(almostImpossiblePuzzle.board), isTrue);
 
@@ -93,17 +113,21 @@ void main() {
     expect(clueCount, greaterThanOrEqualTo(17));
   });
 
-  test('seed 79505584 produces a unique almost-impossible puzzle', () async {
+  test(
+      'seed 79505584 produces a unique almost-impossible (removed, logic in extreme) puzzle',
+      () async {
     final seededPuzzle = await Sudoku.create(
       seed: 79505584,
-      difficulty: SudokuDifficulty.almostImpossible,
+      difficulty: SudokuDifficulty.extreme,
     );
 
     expect(_countSolutions(seededPuzzle.board), 1);
     expect(SudokuLogicSolver().canSolve(seededPuzzle.board), isTrue);
   });
 
-  test('almost-impossible puzzle cannot lose another clue and stay valid', () {
+  test(
+      'almost-impossible (removed, logic in extreme) puzzle cannot lose another clue and stay valid',
+      () {
     final solver = SudokuLogicSolver();
     for (var row = 0; row < 9; row++) {
       for (var column = 0; column < 9; column++) {

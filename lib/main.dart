@@ -501,8 +501,7 @@ class _SudokuPageState extends State<SudokuPage> {
                   final isSelected =
                       _game.selectedRow == row && _game.selectedCol == column;
                   final isPeer = !isSelected &&
-                      (_game.selectedRow == row ||
-                          _game.selectedCol == column);
+                      (_game.selectedRow == row || _game.selectedCol == column);
                   final value = _game.valueAt(row, column);
                   final cellValue = value == 0 ? '' : '$value';
                   final matchesSelectedNumber = _game.selectedNumber >= 0 &&
@@ -665,9 +664,7 @@ class _SudokuPageState extends State<SudokuPage> {
           child: FilterChip(
             key: const ValueKey('notes-toggle'),
             selected: _game.notesEnabled,
-            onSelected: _loading || _game.isComplete
-                ? null
-                : _game.toggleNotes,
+            onSelected: _loading || _game.isComplete ? null : _game.toggleNotes,
             avatar: Icon(
               _game.notesEnabled ? Icons.edit_note : Icons.edit_note_outlined,
             ),
@@ -697,7 +694,6 @@ class _SudokuPageState extends State<SudokuPage> {
   }
 
   String _capitalize(String value) {
-    if (value == 'almostImpossible') return 'Almost-impossible';
     final label = value.replaceAll('_', '-');
     return label[0].toUpperCase() + label.substring(1);
   }
