@@ -1,6 +1,5 @@
-package com.tirine.sudoku_flutter
+package com.example.sudoku_flutter
 
 import io.flutter.embedding.android.FlutterActivity
 
-class MainActivity: FlutterActivity() {
-}
+class MainActivity : FlutterActivity()

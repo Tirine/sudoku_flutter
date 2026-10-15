@@ -4,10 +4,11 @@ import 'dart:isolate';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:sudoku_flutter/sudoku_logic_solver.dart';
 
 typedef Board = List<List<int>>;
 
-enum SudokuDifficulty { easy, medium, hard, extreme }
+enum SudokuDifficulty { easy, medium, hard, extreme, almostImpossible }
 
 class Sudoku {
   final SudokuDifficulty _difficulty;
@@ -64,13 +65,18 @@ class Sudoku {
           seed: seed, difficulty: difficulty, initialise: false, sleep: sleep);
       await created.init();
       return {
+        'seed': created.seed,
         'initialised': created._initialised,
         'solution': created.solution,
         'sudoku': created._sudoku
       };
     });
-    var returnVal = Sudoku._(seed, difficulty, obj['initialised'] as bool,
-        obj['solution'] as Board, obj['sudoku'] as Board);
+    var returnVal = Sudoku._(
+        obj['seed'] as int,
+        difficulty,
+        obj['initialised'] as bool,
+        obj['solution'] as Board,
+        obj['sudoku'] as Board);
     printSudoku(returnVal._solution);
     return returnVal;
   }
@@ -115,7 +121,9 @@ class Sudoku {
     bool generated = false;
     int maxDepth = 5000;
     int minFill = 17;
-    if (_difficulty != SudokuDifficulty.extreme) {
+    if (_difficulty == SudokuDifficulty.almostImpossible) {
+      minFill = 14;
+    } else if (_difficulty != SudokuDifficulty.extreme) {
       minFill += 16;
       if (_difficulty == SudokuDifficulty.easy) {
         minFill += 16;
@@ -126,7 +134,10 @@ class Sudoku {
     while (!generated) {
       try {
         generated = await _generateBoard(sudoku,
-            maxDepth: maxDepth, minFilled: minFill);
+            maxDepth: maxDepth,
+            minFilled: minFill,
+            requireLogicalSolve:
+                _difficulty == SudokuDifficulty.almostImpossible);
       } catch (e) {
         maxDepth *= 2;
         _debugPrint('Retry...');
@@ -182,7 +193,7 @@ class Sudoku {
   }
 
   Future<bool> _generateBoard(Board board,
-      {minFilled = 0, maxDepth = 2e4}) async {
+      {minFilled = 0, maxDepth = 2e4, requireLogicalSolve = false}) async {
     int rowI = _rand() - 1;
     int colI = _rand() - 1;
     void next() {
@@ -197,6 +208,7 @@ class Sudoku {
 
     // int tries = 0;
     int filled = 81;
+    final logicalSolver = requireLogicalSolve ? SudokuLogicSolver() : null;
     uniqueCellFunc() =>
         isUniqueCell(board, rowI, colI, offset: _rand, maxDepth: maxDepth);
 
@@ -205,13 +217,19 @@ class Sudoku {
         // tries++;
         // debugPrint('tries', (i), (j))
         if (board[rowI][colI] != _noValue && await uniqueCellFunc()) {
+          final clue = board[rowI][colI];
           board[rowI][colI] = _noValue;
-          filled--;
-          // printSudoku(board)
-          rowI = _rand() - 1;
-          colI = _rand() - 1;
-          i = 0;
-          j = 0;
+          if (logicalSolver != null && !logicalSolver.canSolve(board)) {
+            board[rowI][colI] = clue;
+            next();
+          } else {
+            filled--;
+            // printSudoku(board)
+            rowI = _rand() - 1;
+            colI = _rand() - 1;
+            i = 0;
+            j = 0;
+          }
         } else {
           next();
         }

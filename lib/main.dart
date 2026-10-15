@@ -4,536 +4,897 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:loader_overlay/loader_overlay.dart';
+import 'package:sudoku_flutter/scoreboard.dart';
 import 'package:sudoku_flutter/sudoku.dart';
+import 'package:sudoku_flutter/sudoku_puzzle_pool.dart';
 
 void main() {
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.puzzlePool});
 
-  // This widget is the root of your application.
+  final SudokuPuzzlePool? puzzlePool;
+
+  static const _seedColor = Color.fromARGB(255, 102, 49, 101);
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Sudoku',
       themeMode: ThemeMode.system,
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a blue toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
         brightness: Brightness.light,
-        colorScheme:
-            ColorScheme.fromSeed(seedColor: Colors.deepPurple.shade800),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _seedColor,
+          surface: const Color(0xFFF6F6F8),
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF6F6F8),
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepPurple.shade200,
-            brightness: Brightness.dark,
-            onBackground: Colors.white),
+          seedColor: const Color(0xFFBE8CC9),
+          brightness: Brightness.dark,
+        ),
         useMaterial3: true,
       ),
-      home: const LoaderOverlay(child: SudokuPage(title: 'Sudoku')),
+      home: LoaderOverlay(
+        child: SudokuPage(title: 'Sudoku', puzzlePool: puzzlePool),
+      ),
     );
   }
 }
 
 class SudokuPage extends StatefulWidget {
-  const SudokuPage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
+  const SudokuPage({super.key, required this.title, this.puzzlePool});
 
   final String title;
+  final SudokuPuzzlePool? puzzlePool;
 
   @override
   State<SudokuPage> createState() => _SudokuPageState();
 }
 
-enum DialogOptions { doNothing, startNew, restartThis }
-
 class _SudokuPageState extends State<SudokuPage> {
-  final Random _rand = Random();
+  final ScoreboardStore _scoreboardStore = ScoreboardStore();
+  late final SudokuPuzzlePool _puzzlePool = widget.puzzlePool ??
+      SudokuPuzzlePool(
+        create: (difficulty) => Sudoku.create(difficulty: difficulty),
+      );
   SudokuDifficulty selectedDifficulty = SudokuDifficulty.easy;
   Sudoku instance =
       Sudoku(difficulty: SudokuDifficulty.easy, initialise: false);
-  Map<SudokuDifficulty, List<Future<Sudoku>>> boards = {
-    SudokuDifficulty.easy: [],
-    SudokuDifficulty.medium: [],
-    SudokuDifficulty.hard: [],
-    SudokuDifficulty.extreme: [],
-  };
-
-  Future<void>? init;
-  bool note = false;
-  late List<TableRow> table;
+  final TextEditingController _seedController = TextEditingController();
   final List<List<bool>> enabled =
-      List.generate(9, (row) => List.generate(9, (col) => false));
+      List.generate(9, (_) => List<bool>.filled(9, false));
   List<List<String>> values = List.generate(
-      9, (row) => List.generate(9, (column) => ' ', growable: false),
-      growable: false);
+    9,
+    (_) => List<String>.filled(9, ' '),
+  );
+  List<List<Set<int>>> notes = List.generate(
+    9,
+    (_) => List.generate(9, (_) => <int>{}),
+  );
+
+  bool note = false;
+  bool _loading = true;
+  bool _loadInProgress = false;
+  bool _gameComplete = false;
   int selectedRow = -1;
   int selectedCol = -1;
   int selectedNum = -1;
-
-  Timer? timer;
   int timerVal = 0;
+  Timer? timer;
+  String? _lastIncorrectBoard;
 
-  durationToString(int duration) {
-    String str = '';
-    if (duration > 60) {
-      str += '${(duration / 60).floor()}:';
-    }
-    int sec = duration % 60;
-    if (sec < 10 && str.isNotEmpty) {
-      str += '0$sec';
-    } else {
-      str += '$sec';
-    }
-    return str;
+  @override
+  void initState() {
+    super.initState();
+    _puzzlePool.preloadAll();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadGame();
+    });
   }
 
-  void update(void Function() updateFunc) {
+  @override
+  void dispose() {
+    timer?.cancel();
+    _seedController.dispose();
+    super.dispose();
+  }
+
+  String durationToString(int duration) {
+    final minutes = duration ~/ 60;
+    final seconds = duration % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _loadGame({
+    int? seed,
+    SudokuDifficulty? difficulty,
+  }) async {
+    if (_loadInProgress) return;
+    _loadInProgress = true;
+
+    final nextDifficulty = difficulty ?? selectedDifficulty;
+    timer?.cancel();
     setState(() {
-      // Something to do on each update
-      updateFunc();
+      _loading = true;
     });
-  }
+    if (mounted) {
+      context.loaderOverlay.show();
+    }
 
-  void _initBoard(BuildContext context) {
-    context.loaderOverlay.show();
-    update(() {
-      print(context.loaderOverlay.visible);
-      // This call to update tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling update(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      init = instance.initialised ? Future.value() : instance.init();
-      // TODO Loading overlay
-      init!.then((voidVal) {
-        update(() {
-          // TODO Close loading overlay
-          for (int i = 0; i < instance.board.length; i++) {
-            for (int j = 0; j < instance.board[i].length; j++) {
-              values[i][j] =
-                  instance.board[i][j] == 0 ? ' ' : '${instance.board[i][j]}';
-              enabled[i][j] = instance.board[i][j] == 0;
-            }
+    try {
+      final nextInstance = seed == null
+          ? await _puzzlePool.take(nextDifficulty)
+          : await Sudoku.create(seed: seed, difficulty: nextDifficulty);
+      if (!mounted) return;
+
+      setState(() {
+        instance = nextInstance;
+        selectedDifficulty = nextDifficulty;
+        values = List.generate(
+          9,
+          (row) => List.generate(
+            9,
+            (column) => nextInstance.board[row][column] == 0
+                ? ' '
+                : '${nextInstance.board[row][column]}',
+          ),
+        );
+        notes = List.generate(9, (_) => List.generate(9, (_) => <int>{}));
+        for (var row = 0; row < 9; row++) {
+          for (var column = 0; column < 9; column++) {
+            enabled[row][column] = nextInstance.board[row][column] == 0;
           }
-          timerVal = 0;
-          timer?.cancel();
-
-          timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-            update(() {
-              timerVal = timer.tick;
-            });
-          });
-        });
-        print(context.loaderOverlay.visible);
-        context.loaderOverlay.hide();
-        print('!${!context.loaderOverlay.visible}');
+        }
+        selectedRow = -1;
+        selectedCol = -1;
+        selectedNum = -1;
+        note = false;
+        timerVal = 0;
+        _gameComplete = false;
+        _lastIncorrectBoard = null;
+        _loading = false;
+        _seedController.text = '${nextInstance.seed}';
       });
-    });
-  }
-
-  void enabledCell(func, row, column, context) {
-    if (enabled[row][column]) {
-      func(row, column, context);
+      context.loaderOverlay.hide();
+      timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted && !_gameComplete) {
+          setState(() => timerVal++);
+        }
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      context.loaderOverlay.hide();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create a puzzle: $error')),
+      );
+    } finally {
+      _loadInProgress = false;
     }
   }
 
-  void addToCell(row, column, number) {
+  void _setCell(int row, int column, int number) {
+    if (!enabled[row][column] || _gameComplete) return;
+
     if (note) {
-      if (instance.board[row][column] == 0) {
-        if (number == 0) {
-          values[row][column] = ' ';
-        } else {
-          var list = List<int>.from(values[row][column].codeUnits);
-          list.sort();
-          int unit = '$number'.codeUnits[0];
-          if (list.contains(unit)) {
-            list.remove(unit);
-          } else {
-            list.add(unit);
-          }
-          values[row][column] = String.fromCharCodes(list);
-          print('Noted: "${values[row][column]}"');
+      if (instance.board[row][column] != 0) return;
+      if (number == 0) {
+        notes[row][column].clear();
+      } else {
+        if (!notes[row][column].add(number)) {
+          notes[row][column].remove(number);
         }
       }
-    } else {
-      if (number == 0 || number == instance.board[row][column]) {
-        values[row][column] = ' ';
-        instance.board[row][column] = 0;
-      } else {
-        values[row][column] = '$number';
-        instance.board[row][column] = number;
-      }
+      return;
     }
+
+    values[row][column] = number == 0 ? ' ' : '$number';
+    notes[row][column].clear();
+    instance.board[row][column] = number;
   }
 
-  void selectCell(row, column, context) {
-    update(() {
+  void _selectCell(int row, int column) {
+    if (!enabled[row][column] || _loading || _gameComplete) return;
+    setState(() {
       if (selectedNum >= 0) {
-        addToCell(row, column, selectedNum);
+        _setCell(row, column, selectedNum);
+      } else if (selectedRow == row && selectedCol == column) {
+        selectedRow = -1;
+        selectedCol = -1;
       } else {
-        // Selection
-        if (selectedRow == row && selectedCol == column) {
-          selectedRow = -1;
-          selectedCol = -1;
-        } else {
-          selectedRow = row;
-          selectedCol = column;
-        }
+        selectedRow = row;
+        selectedCol = column;
       }
-      verify(context);
     });
+    unawaited(_verify());
   }
 
-  void selectNumber(number, context) {
-    update(() {
+  void _selectNumber(int number) {
+    if (_loading || _gameComplete) return;
+    setState(() {
       if (selectedRow >= 0) {
-        addToCell(selectedRow, selectedCol, number);
+        _setCell(selectedRow, selectedCol, number);
       } else {
-        if (selectedNum == number) {
-          selectedNum = -1;
-        } else {
-          selectedNum = number;
-        }
+        selectedNum = selectedNum == number ? -1 : number;
       }
-      verify(context);
     });
+    unawaited(_verify());
   }
 
-  void verify(context) {
-    int time = timerVal;
-    if (instance.filled()) {
-      bool success = instance.verify();
-      showDialog<DialogOptions?>(
-          context: context,
-          builder: (BuildContext context) {
-            return SimpleDialog(
-              title: Text(success ? 'Success!' : 'Something is not right...'),
-              children: [
-                ...(success
-                    ? [Text('Time: ${durationToString(time)}')]
-                    : [
-                        //try again
-                      ]),
-                // start new
-                ElevatedButton(
-                  child: const Text('Go Back'),
-                  onPressed: () {
-                    Navigator.pop(context, DialogOptions.doNothing);
-                  },
-                )
-              ],
-            );
-          }).then((value) {
-        if (value != null && value != DialogOptions.doNothing) {
-          if (value == DialogOptions.restartThis) {
-          } else {
-            _initBoard(context);
-          }
-        }
-      });
+  Future<void> _verify() async {
+    if (!instance.filled() || _gameComplete) return;
+    if (instance.verify()) {
+      final finishTime = timerVal;
+      final difficulty = instance.difficulty;
+      _gameComplete = true;
       timer?.cancel();
-      for (var list in enabled) {
-        for (var i = 0; i < list.length; i++) {
-          list[i] = false;
+      int? scoreRank;
+      try {
+        scoreRank = await _scoreboardStore.recordTime(
+          difficulty: difficulty,
+          seconds: finishTime,
+        );
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not save your score: $error')),
+          );
         }
+      }
+      if (!mounted) return;
+
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Puzzle complete'),
+          content: Text(
+            scoreRank == null
+                ? 'Solved in ${durationToString(finishTime)}. Nicely done.'
+                : 'Solved in ${durationToString(finishTime)}. '
+                    'That is #$scoreRank on the ${_capitalize(difficulty.name)} '
+                    'scoreboard!',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _loadGame();
+              },
+              child: const Text('New puzzle'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      final boardSignature = instance.board.map((row) => row.join()).join();
+      if (boardSignature != _lastIncorrectBoard) {
+        _lastIncorrectBoard = boardSignature;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Not quite right yet. Check your entries and try again.'),
+          ),
+        );
       }
     }
   }
 
-  fillLists() async {
-    if (!instance.initialised) {
-      Sudoku newInstance = await Sudoku.create(
-          seed: instance.seed, difficulty: instance.difficulty);
-      if (!instance.initialised) {
-        instance = newInstance;
-      }
+  void _submitSeed(String rawSeed) {
+    final seed = int.tryParse(rawSeed);
+    if (seed == null || seed < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a seed of 0 or higher.')),
+      );
+      return;
     }
+    _loadGame(seed: seed);
+  }
 
-    for (var entry in boards.entries) {
-      for (var i = entry.value.length; i < 3; i++) {
-        Future<Sudoku> created = Sudoku.create(difficulty: entry.key, sleep: i);
-        created.then(((board) {
-          entry.value.add(created);
-          // print('Added ${entry.key}, ${entry.value.length}');
-        }));
-      }
+  Future<void> _showScoreboard() async {
+    try {
+      final scores = await _scoreboardStore.loadScores();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => _ScoreboardDialog(
+          scores: scores,
+          formatTime: durationToString,
+          capitalize: _capitalize,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load the scoreboard: $error')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    fillLists();
-    Color? addShade(
-            {Color? baseColor = Colors.transparent, transparancy = 0.85}) =>
-        Color.lerp(Theme.of(context).colorScheme.onSurface, baseColor,
-            transparancy);
-
-    Color? addSelection(
-            {Color? baseColor = Colors.transparent, transparancy = 0.5}) =>
-        Color.lerp(Theme.of(context).colorScheme.onSurface, baseColor,
-            transparancy);
-
-    Color? addHighlight(
-            {Color? baseColor = Colors.transparent, transparancy = 0.85}) =>
-        Color.lerp(
-            Theme.of(context).colorScheme.onSecondary, baseColor, transparancy);
-    // This method is rerun every time update is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    Size mediaSize = MediaQuery.of(context).size;
-    double fontSize = min(mediaSize.height, mediaSize.width) / 18;
-    table = List.generate(
-        9,
-        (row) => TableRow(
-            children: List.generate(
-                9,
-                (column) => GestureDetector(
-                    onTap: () => enabledCell(selectCell, row, column, context),
-                    child: Container(
-                        decoration: BoxDecoration(
-                            border: column % 3 == 2
-                                ? const Border(right: BorderSide(width: 4))
-                                : column == 0
-                                    ? const Border(left: BorderSide(width: 4))
-                                    : null,
-                            color: column % 3 == 1
-                                ? addShade(
-                                    baseColor: (selectedRow == row &&
-                                            selectedCol == column)
-                                        ? addSelection()
-                                        : Colors.transparent)
-                                : (selectedRow == row && selectedCol == column)
-                                    ? addSelection()
-                                    : null),
-                        child: (enabled[row][column] &&
-                                values[row][column].length > 1)
-                            ? Table(
-                                children: List<TableRow>.generate(
-                                    3,
-                                    (intRow) => TableRow(
-                                        children: List<Text>.generate(
-                                            3,
-                                            (intCol) => Text(
-                                                values[row][column].contains(
-                                                        '${(intRow * 3 + intCol) + 1}')
-                                                    ? '${(intRow * 3 + intCol) + 1}'
-                                                    : ' ',
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  fontSize: fontSize / 3,
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .primary,
-                                                ))))))
-                            : Text(
-                                values[row][column],
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    fontSize: fontSize,
-                                    color: enabled[row][column]
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context)
-                                            .colorScheme
-                                            .tertiary),
-                              ))),
-                growable: false),
-            decoration: BoxDecoration(
-                border: row % 3 == 2
-                    ? const Border(bottom: BorderSide(width: 4))
-                    : (row == 0
-                        ? const Border(top: BorderSide(width: 4))
-                        : null),
-                color: row % 2 == 0 ? addShade() : null)),
-        growable: false);
-    List<ElevatedButton> numbers = List.generate(
-        9,
-        (index) => ElevatedButton(
-              onPressed: () => selectNumber(index + 1, context),
-              style: ButtonStyle(
-                  backgroundColor: WidgetStateProperty.resolveWith<Color?>(
-                      (states) =>
-                          selectedNum == (index + 1) ? addSelection() : null)),
-              child: Text(
-                '${index + 1}',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: fontSize / 2),
-              ),
-            ));
-    ElevatedButton noteButton = ElevatedButton(
-        onPressed: () => update(() {
-              note = !note;
-            }),
-        style: ButtonStyle(
-            backgroundColor: WidgetStateProperty.resolveWith<Color?>(
-                (states) => (note ? addSelection() : null))),
-        child: Icon(
-          Icons.edit,
-          size: fontSize * 1.2,
-        ));
-    List<Widget> secondRow = [
-      const Spacer(),
-      const Text('Difficulty: '),
-      DropdownButton<SudokuDifficulty>(
-        items: SudokuDifficulty.values
-            .map<DropdownMenuItem<SudokuDifficulty>>((e) => DropdownMenuItem(
-                value: e,
-                child: Text(e.name[0].toUpperCase() + e.name.substring(1))))
-            .toList(),
-        onChanged: (value) {
-          update(() {
-            if (value != selectedDifficulty &&
-                value != null &&
-                boards[value] != null) {
-              int index = _rand.nextInt(boards[value]!.length - 1);
-              boards[value]![index].then((val) {
-                instance = val;
-                boards[value]!.removeAt(index);
-                update(() {
-                  selectedDifficulty = value;
-                });
-              });
-            }
-          });
-        },
-        value: selectedDifficulty,
-      ),
-      const Spacer(),
-      Text(timer != null ? 'Time: ${durationToString(timerVal)}' : ''),
-      const Spacer(),
-    ];
     return Scaffold(
-      // appBar: AppBar(
-      //   // TRY THIS: Try changing the color here to a specific color (to
-      //   // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-      //   // change color while the other colors stay the same.
-      //   backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      //   // Here we take the value from the MyHomePage object that was created by
-      //   // the App.build method, and use it to set our appbar title.
-      //   title: Text(widget.title),
-      // ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Spacer(),
-            FractionallySizedBox(
-                child: Row(children: [
-              const Spacer(flex: 2),
-              TextField(
-                  decoration: InputDecoration(
-                      constraints: BoxConstraints(
-                          maxWidth: mediaSize.width /
-                              (mediaSize.height >= mediaSize.width ? 1 : 2)),
-                      labelText: 'Current ID: ${instance.seed}'),
-                  keyboardType: const TextInputType.numberWithOptions(
-                      signed: true, decimal: false),
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onSubmitted: (value) async {
-                    int? newSeed = int.tryParse(value);
-                    if (newSeed != null) {
-                      context.loaderOverlay.show();
-                      instance = await Sudoku.create(
-                          seed: newSeed, difficulty: selectedDifficulty);
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final landscape = constraints.maxWidth > constraints.maxHeight;
+            final horizontalPadding = landscape ? 24.0 : 20.0;
+            final content = landscape
+                ? Row(
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: min(
+                                constraints.maxHeight - 32,
+                                constraints.maxWidth * 0.62,
+                              ),
+                            ),
+                            child: _buildBoard(context),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: min(380.0, constraints.maxWidth * 0.46),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              children: [
+                                _buildHeader(context),
+                                const SizedBox(height: 10),
+                                _buildStatus(context),
+                                const SizedBox(height: 8),
+                                _buildSeedInput(context),
+                                const SizedBox(height: 12),
+                                _buildNumberPad(context),
+                                const SizedBox(height: 8),
+                                _buildActions(context),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Padding(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: horizontalPadding),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        _buildHeader(context),
+                        const SizedBox(height: 12),
+                        _buildStatus(context),
+                        const SizedBox(height: 8),
+                        _buildSeedInput(context),
+                        Expanded(
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: min(600.0, constraints.maxHeight),
+                              ),
+                              child: _buildBoard(context),
+                            ),
+                          ),
+                        ),
+                        _buildNumberPad(context),
+                        const SizedBox(height: 12),
+                        _buildActions(context),
+                        const SizedBox(height: 12),
+                      ],
+                    ),
+                  );
 
-                      _initBoard(context);
-                    }
-                  }),
-              ...(mediaSize.height < mediaSize.width ? secondRow : []),
-              const Spacer(),
-            ])),
-            ...(mediaSize.height >= mediaSize.width
-                ? [Row(children: secondRow)]
-                : []),
-            const Spacer(),
-            Table(
-              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-              children: table,
-            ),
-            const Spacer(),
-            Row(children: [
-              const Spacer(),
-              ...(mediaSize.height > mediaSize.width
-                  ? numbers.sublist(0, (numbers.length / 2).floor())
-                  : numbers),
-              const Spacer(),
-              ElevatedButton(
-                  onPressed: () => selectNumber(0, context),
-                  style: ButtonStyle(
-                      backgroundColor:
-                          WidgetStateProperty.resolveWith<Color?>((states) =>
-                              (selectedNum == 0 ? addSelection() : null))),
-                  child: Icon(
-                    Icons.highlight_remove,
-                    size: fontSize,
-                  )),
-              ...(mediaSize.height > mediaSize.width ? [] : [noteButton]),
-              const Spacer(),
-            ]),
-            ...(mediaSize.height > mediaSize.width
-                ? [
-                    Row(children: [
-                      const Spacer(),
-                      ...numbers.sublist((numbers.length / 2).floor()),
-                      const Spacer(),
-                      noteButton,
-                      const Spacer()
-                    ]),
-                    const Spacer()
-                  ]
-                : [const Spacer()])
-          ],
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1000),
+                child: content,
+              ),
+            );
+          },
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _initBoard(context),
-        tooltip: 'Start new',
-        child: const Icon(Icons.restart_alt),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
+
+  Widget _buildHeader(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.title.toUpperCase(),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 2,
+                    ),
+              ),
+              Text(
+                'A little space to focus.',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        IconButton.filledTonal(
+          key: const ValueKey('scoreboard'),
+          onPressed: _showScoreboard,
+          tooltip: 'Scoreboard',
+          icon: const Icon(Icons.emoji_events_outlined),
+        ),
+        const SizedBox(width: 8),
+        FilledButton.tonalIcon(
+          key: const ValueKey('new-puzzle'),
+          onPressed: _loading ? null : () => _loadGame(),
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('New puzzle'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatus(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainer,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.timer_outlined,
+                  size: 19,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  durationToString(timerVal),
+                  key: const ValueKey('game-timer'),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                DropdownButtonHideUnderline(
+                  child: SizedBox(
+                    width: 180,
+                    child: DropdownButton<SudokuDifficulty>(
+                      key: const ValueKey('difficulty'),
+                      value: selectedDifficulty,
+                      isExpanded: true,
+                      borderRadius: BorderRadius.circular(12),
+                      items: SudokuDifficulty.values
+                          .map(
+                            (difficulty) => DropdownMenuItem(
+                              value: difficulty,
+                              child: Text(
+                                _capitalize(difficulty.name),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _loading
+                          ? null
+                          : (difficulty) {
+                              if (difficulty != null &&
+                                  difficulty != selectedDifficulty) {
+                                _loadGame(difficulty: difficulty);
+                              }
+                            },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSeedInput(BuildContext context) {
+    return TextField(
+      key: const ValueKey('seed-input'),
+      controller: _seedController,
+      enabled: !_loading,
+      keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.done,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      onSubmitted: _submitSeed,
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.tag_rounded),
+        labelText: 'Puzzle seed',
+        hintText: 'Enter a seed to replay a puzzle',
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
+        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBoard(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AspectRatio(
+      key: const ValueKey('sudoku-board'),
+      aspectRatio: 1,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: colors.shadow.withValues(alpha: 0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              GridView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.zero,
+                itemCount: 81,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 9,
+                ),
+                itemBuilder: (context, index) {
+                  final row = index ~/ 9;
+                  final column = index % 9;
+                  final isSelected =
+                      selectedRow == row && selectedCol == column;
+                  final isPeer = !isSelected &&
+                      (selectedRow == row || selectedCol == column);
+                  final cellValue = values[row][column];
+                  final matchesSelectedNumber = selectedNum >= 0 &&
+                      cellValue == '$selectedNum' &&
+                      cellValue.trim().isNotEmpty;
+                  final background = isSelected
+                      ? colors.primaryContainer
+                      : matchesSelectedNumber
+                          ? colors.tertiaryContainer
+                          : isPeer
+                              ? colors.surfaceContainerHighest
+                              : colors.surface;
+                  final cellNotes = notes[row][column];
+
+                  return Semantics(
+                    button: enabled[row][column],
+                    label:
+                        'Row ${row + 1}, column ${column + 1}${cellValue.trim().isEmpty ? ', empty' : ', $cellValue'}${cellNotes.isEmpty ? '' : ', notes ${cellNotes.toList()..sort()}'}',
+                    child: InkWell(
+                      onTap: enabled[row][column]
+                          ? () => _selectCell(row, column)
+                          : null,
+                      child: ColoredBox(
+                        color: background,
+                        child: cellNotes.isNotEmpty && enabled[row][column]
+                            ? _buildNotes(context, cellNotes)
+                            : Center(
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) => Text(
+                                    cellValue.trim(),
+                                    style: TextStyle(
+                                      fontSize:
+                                          min(22, constraints.maxWidth * 0.65),
+                                      fontWeight: enabled[row][column]
+                                          ? FontWeight.w500
+                                          : FontWeight.w700,
+                                      color: enabled[row][column]
+                                          ? colors.primary
+                                          : colors.onSurface,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              IgnorePointer(
+                child: CustomPaint(
+                  key: const ValueKey('sudoku-grid-lines'),
+                  painter: _SudokuGridPainter(color: colors.outlineVariant),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotes(BuildContext context, Set<int> notes) {
+    final color = Theme.of(context).colorScheme.primary;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final noteFontSize = min(15.0, constraints.maxWidth / 3 * 0.95);
+        return Column(
+          children: List.generate(
+            3,
+            (row) => Expanded(
+              child: Row(
+                children: List.generate(
+                  3,
+                  (column) {
+                    final number = row * 3 + column + 1;
+                    return Expanded(
+                      child: Center(
+                        child: Text(
+                          notes.contains(number) ? '$number' : '',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: noteFontSize,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildNumberPad(BuildContext context) {
+    return Column(
+      children: List.generate(
+        3,
+        (row) => Padding(
+          padding: EdgeInsets.only(top: row == 0 ? 0 : 6),
+          child: Row(
+            children: List.generate(
+              3,
+              (column) {
+                final number = row * 3 + column + 1;
+                final selected = selectedNum == number;
+                return Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(left: column == 0 ? 0 : 6),
+                    child: _buildDigitKey(context, number, selected),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDigitKey(BuildContext context, int number, bool selected) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      label: 'Enter $number',
+      button: true,
+      child: Material(
+        color: selected ? colors.primaryContainer : colors.surfaceContainer,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          key: ValueKey('digit-$number'),
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _selectNumber(number),
+          child: SizedBox(
+            height: 48,
+            child: Center(
+              child: Text(
+                '$number',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: selected
+                          ? colors.onPrimaryContainer
+                          : colors.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActions(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: FilterChip(
+            key: const ValueKey('notes-toggle'),
+            selected: note,
+            onSelected: _loading || _gameComplete
+                ? null
+                : (selected) => setState(() => note = selected),
+            avatar: Icon(note ? Icons.edit_note : Icons.edit_note_outlined),
+            label: Text(note ? 'Notes on' : 'Notes'),
+            showCheckmark: false,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: OutlinedButton.icon(
+            key: const ValueKey('erase'),
+            onPressed:
+                _loading || _gameComplete ? null : () => _selectNumber(0),
+            icon: const Icon(Icons.backspace_outlined),
+            label: const Text('Erase'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _capitalize(String value) {
+    if (value == 'almostImpossible') return 'Almost-impossible';
+    final label = value.replaceAll('_', '-');
+    return label[0].toUpperCase() + label.substring(1);
+  }
+}
+
+class _ScoreboardDialog extends StatelessWidget {
+  const _ScoreboardDialog({
+    required this.scores,
+    required this.formatTime,
+    required this.capitalize,
+  });
+
+  final Map<SudokuDifficulty, List<int>> scores;
+  final String Function(int) formatTime;
+  final String Function(String) capitalize;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return AlertDialog(
+      title: const Text('Best times'),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final difficulty in SudokuDifficulty.values) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 4),
+                  child: Text(
+                    capitalize(difficulty.name),
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (scores[difficulty]!.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'No times yet',
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                else
+                  for (var index = 0;
+                      index < scores[difficulty]!.length;
+                      index++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 36,
+                            child: Text(
+                              '#${index + 1}',
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            formatTime(scores[difficulty]![index]),
+                            style: textTheme.bodyLarge?.copyWith(
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                if (difficulty != SudokuDifficulty.values.last)
+                  const Divider(height: 12),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SudokuGridPainter extends CustomPainter {
+  const _SudokuGridPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final minorPaint = Paint()
+      ..color = color
+      ..strokeWidth = 0.6;
+    final majorPaint = Paint()
+      ..color = color
+      ..strokeWidth = 2;
+
+    for (var line = 0; line <= 9; line++) {
+      final position = size.width * line / 9;
+      final paint = line % 3 == 0 ? majorPaint : minorPaint;
+      canvas.drawLine(
+        Offset(position, 0),
+        Offset(position, size.height),
+        paint,
+      );
+      canvas.drawLine(
+        Offset(0, position),
+        Offset(size.width, position),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SudokuGridPainter oldDelegate) =>
+      color != oldDelegate.color;
 }
