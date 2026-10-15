@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:loader_overlay/loader_overlay.dart';
 import 'package:sudoku_flutter/scoreboard.dart';
 import 'package:sudoku_flutter/sudoku.dart';
+import 'package:sudoku_flutter/sudoku_game_controller.dart';
 import 'package:sudoku_flutter/sudoku_puzzle_pool.dart';
 
 void main() {
@@ -60,39 +61,24 @@ class SudokuPage extends StatefulWidget {
 
 class _SudokuPageState extends State<SudokuPage> {
   final ScoreboardStore _scoreboardStore = ScoreboardStore();
+  late final SudokuGameController _game = SudokuGameController(
+    initialGame: Sudoku(difficulty: SudokuDifficulty.easy, initialise: false),
+    startTimer: false,
+  );
   late final SudokuPuzzlePool _puzzlePool = widget.puzzlePool ??
       SudokuPuzzlePool(
         create: (difficulty) => Sudoku.create(difficulty: difficulty),
       );
   SudokuDifficulty selectedDifficulty = SudokuDifficulty.easy;
-  Sudoku instance =
-      Sudoku(difficulty: SudokuDifficulty.easy, initialise: false);
   final TextEditingController _seedController = TextEditingController();
-  final List<List<bool>> enabled =
-      List.generate(9, (_) => List<bool>.filled(9, false));
-  List<List<String>> values = List.generate(
-    9,
-    (_) => List<String>.filled(9, ' '),
-  );
-  List<List<Set<int>>> notes = List.generate(
-    9,
-    (_) => List.generate(9, (_) => <int>{}),
-  );
-
-  bool note = false;
   bool _loading = true;
   bool _loadInProgress = false;
-  bool _gameComplete = false;
-  int selectedRow = -1;
-  int selectedCol = -1;
-  int selectedNum = -1;
-  int timerVal = 0;
-  Timer? timer;
   String? _lastIncorrectBoard;
 
   @override
   void initState() {
     super.initState();
+    _game.addListener(_onGameChanged);
     _puzzlePool.preloadAll();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadGame();
@@ -101,9 +87,14 @@ class _SudokuPageState extends State<SudokuPage> {
 
   @override
   void dispose() {
-    timer?.cancel();
+    _game.removeListener(_onGameChanged);
+    _game.dispose();
     _seedController.dispose();
     super.dispose();
+  }
+
+  void _onGameChanged() {
+    if (mounted) setState(() {});
   }
 
   String durationToString(int duration) {
@@ -120,7 +111,6 @@ class _SudokuPageState extends State<SudokuPage> {
     _loadInProgress = true;
 
     final nextDifficulty = difficulty ?? selectedDifficulty;
-    timer?.cancel();
     setState(() {
       _loading = true;
     });
@@ -134,40 +124,14 @@ class _SudokuPageState extends State<SudokuPage> {
           : await Sudoku.create(seed: seed, difficulty: nextDifficulty);
       if (!mounted) return;
 
+      _game.load(nextInstance);
       setState(() {
-        instance = nextInstance;
         selectedDifficulty = nextDifficulty;
-        values = List.generate(
-          9,
-          (row) => List.generate(
-            9,
-            (column) => nextInstance.board[row][column] == 0
-                ? ' '
-                : '${nextInstance.board[row][column]}',
-          ),
-        );
-        notes = List.generate(9, (_) => List.generate(9, (_) => <int>{}));
-        for (var row = 0; row < 9; row++) {
-          for (var column = 0; column < 9; column++) {
-            enabled[row][column] = nextInstance.board[row][column] == 0;
-          }
-        }
-        selectedRow = -1;
-        selectedCol = -1;
-        selectedNum = -1;
-        note = false;
-        timerVal = 0;
-        _gameComplete = false;
         _lastIncorrectBoard = null;
         _loading = false;
         _seedController.text = '${nextInstance.seed}';
       });
       context.loaderOverlay.hide();
-      timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted && !_gameComplete) {
-          setState(() => timerVal++);
-        }
-      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -180,61 +144,23 @@ class _SudokuPageState extends State<SudokuPage> {
     }
   }
 
-  void _setCell(int row, int column, int number) {
-    if (!enabled[row][column] || _gameComplete) return;
-
-    if (note) {
-      if (instance.board[row][column] != 0) return;
-      if (number == 0) {
-        notes[row][column].clear();
-      } else {
-        if (!notes[row][column].add(number)) {
-          notes[row][column].remove(number);
-        }
-      }
-      return;
-    }
-
-    values[row][column] = number == 0 ? ' ' : '$number';
-    notes[row][column].clear();
-    instance.board[row][column] = number;
-  }
-
   void _selectCell(int row, int column) {
-    if (!enabled[row][column] || _loading || _gameComplete) return;
-    setState(() {
-      if (selectedNum >= 0) {
-        _setCell(row, column, selectedNum);
-      } else if (selectedRow == row && selectedCol == column) {
-        selectedRow = -1;
-        selectedCol = -1;
-      } else {
-        selectedRow = row;
-        selectedCol = column;
-      }
-    });
+    if (_loading) return;
+    _game.selectCell(row, column);
     unawaited(_verify());
   }
 
   void _selectNumber(int number) {
-    if (_loading || _gameComplete) return;
-    setState(() {
-      if (selectedRow >= 0) {
-        _setCell(selectedRow, selectedCol, number);
-      } else {
-        selectedNum = selectedNum == number ? -1 : number;
-      }
-    });
+    if (_loading) return;
+    _game.selectNumber(number);
     unawaited(_verify());
   }
 
   Future<void> _verify() async {
-    if (!instance.filled() || _gameComplete) return;
-    if (instance.verify()) {
-      final finishTime = timerVal;
-      final difficulty = instance.difficulty;
-      _gameComplete = true;
-      timer?.cancel();
+    if (!_game.isFilled || _game.isComplete) return;
+    if (_game.verifyAndComplete()) {
+      final finishTime = _game.elapsedSeconds;
+      final difficulty = _game.game.difficulty;
       int? scoreRank;
       try {
         scoreRank = await _scoreboardStore.recordTime(
@@ -277,7 +203,7 @@ class _SudokuPageState extends State<SudokuPage> {
         ),
       );
     } else {
-      final boardSignature = instance.board.map((row) => row.join()).join();
+      final boardSignature = _game.game.board.map((row) => row.join()).join();
       if (boardSignature != _lastIncorrectBoard) {
         _lastIncorrectBoard = boardSignature;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -470,7 +396,7 @@ class _SudokuPageState extends State<SudokuPage> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  durationToString(timerVal),
+                  durationToString(_game.elapsedSeconds),
                   key: const ValueKey('game-timer'),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontFeatures: const [FontFeature.tabularFigures()],
@@ -573,13 +499,14 @@ class _SudokuPageState extends State<SudokuPage> {
                   final row = index ~/ 9;
                   final column = index % 9;
                   final isSelected =
-                      selectedRow == row && selectedCol == column;
+                      _game.selectedRow == row && _game.selectedCol == column;
                   final isPeer = !isSelected &&
-                      (selectedRow == row || selectedCol == column);
-                  final cellValue = values[row][column];
-                  final matchesSelectedNumber = selectedNum >= 0 &&
-                      cellValue == '$selectedNum' &&
-                      cellValue.trim().isNotEmpty;
+                      (_game.selectedRow == row ||
+                          _game.selectedCol == column);
+                  final value = _game.valueAt(row, column);
+                  final cellValue = value == 0 ? '' : '$value';
+                  final matchesSelectedNumber = _game.selectedNumber >= 0 &&
+                      value == _game.selectedNumber;
                   final background = isSelected
                       ? colors.primaryContainer
                       : matchesSelectedNumber
@@ -587,31 +514,32 @@ class _SudokuPageState extends State<SudokuPage> {
                           : isPeer
                               ? colors.surfaceContainerHighest
                               : colors.surface;
-                  final cellNotes = notes[row][column];
+                  final cellNotes = _game.notesAt(row, column);
 
                   return Semantics(
-                    button: enabled[row][column],
+                    button: _game.isEditable(row, column),
                     label:
-                        'Row ${row + 1}, column ${column + 1}${cellValue.trim().isEmpty ? ', empty' : ', $cellValue'}${cellNotes.isEmpty ? '' : ', notes ${cellNotes.toList()..sort()}'}',
+                        'Row ${row + 1}, column ${column + 1}${cellValue.isEmpty ? ', empty' : ', $cellValue'}${cellNotes.isEmpty ? '' : ', notes ${cellNotes.toList()..sort()}'}',
                     child: InkWell(
-                      onTap: enabled[row][column]
+                      onTap: _game.isEditable(row, column)
                           ? () => _selectCell(row, column)
                           : null,
                       child: ColoredBox(
                         color: background,
-                        child: cellNotes.isNotEmpty && enabled[row][column]
+                        child: cellNotes.isNotEmpty &&
+                                _game.isEditable(row, column)
                             ? _buildNotes(context, cellNotes)
                             : Center(
                                 child: LayoutBuilder(
                                   builder: (context, constraints) => Text(
-                                    cellValue.trim(),
+                                    cellValue,
                                     style: TextStyle(
                                       fontSize:
                                           min(22, constraints.maxWidth * 0.65),
-                                      fontWeight: enabled[row][column]
+                                      fontWeight: _game.isEditable(row, column)
                                           ? FontWeight.w500
                                           : FontWeight.w700,
-                                      color: enabled[row][column]
+                                      color: _game.isEditable(row, column)
                                           ? colors.primary
                                           : colors.onSurface,
                                     ),
@@ -684,7 +612,7 @@ class _SudokuPageState extends State<SudokuPage> {
               3,
               (column) {
                 final number = row * 3 + column + 1;
-                final selected = selectedNum == number;
+                final selected = _game.selectedNumber == number;
                 return Expanded(
                   child: Padding(
                     padding: EdgeInsets.only(left: column == 0 ? 0 : 6),
@@ -736,12 +664,14 @@ class _SudokuPageState extends State<SudokuPage> {
         Expanded(
           child: FilterChip(
             key: const ValueKey('notes-toggle'),
-            selected: note,
-            onSelected: _loading || _gameComplete
+            selected: _game.notesEnabled,
+            onSelected: _loading || _game.isComplete
                 ? null
-                : (selected) => setState(() => note = selected),
-            avatar: Icon(note ? Icons.edit_note : Icons.edit_note_outlined),
-            label: Text(note ? 'Notes on' : 'Notes'),
+                : _game.toggleNotes,
+            avatar: Icon(
+              _game.notesEnabled ? Icons.edit_note : Icons.edit_note_outlined,
+            ),
+            label: Text(_game.notesEnabled ? 'Notes on' : 'Notes'),
             showCheckmark: false,
             padding: const EdgeInsets.symmetric(vertical: 8),
           ),
@@ -751,7 +681,7 @@ class _SudokuPageState extends State<SudokuPage> {
           child: OutlinedButton.icon(
             key: const ValueKey('erase'),
             onPressed:
-                _loading || _gameComplete ? null : () => _selectNumber(0),
+                _loading || _game.isComplete ? null : () => _selectNumber(0),
             icon: const Icon(Icons.backspace_outlined),
             label: const Text('Erase'),
             style: OutlinedButton.styleFrom(
