@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sudoku_flutter/last_game_store.dart';
 import 'package:sudoku_flutter/main.dart';
 import 'package:sudoku_flutter/sudoku.dart';
 import 'package:sudoku_flutter/sudoku_puzzle_pool.dart';
@@ -82,6 +83,60 @@ void main() {
           .enabled,
       isTrue,
     );
+  });
+
+  testWidgets('offers saved game choices only at startup',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await LastGameStore().save({
+      'seed': 12,
+      'difficulty': 'easy',
+      'board': List.generate(9, (_) => List<int>.filled(9, 0)),
+      'notes': List.generate(
+        9,
+        (_) => List.generate(9, (_) => <int>[]),
+      ),
+      'elapsedSeconds': 15,
+      'undoHistory': <Object>[],
+    });
+    final pool = SudokuPuzzlePool(
+      preloadCount: 0,
+      create: (difficulty) async => Sudoku(
+        seed: 13,
+        difficulty: difficulty,
+        initialise: false,
+      ),
+    );
+
+    await tester.pumpWidget(MyApp(puzzlePool: pool));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.byKey(const ValueKey('continue-last-game')), findsOneWidget);
+    expect(find.byKey(const ValueKey('start-new-game')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('start-new-game')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Welcome back'), findsNothing);
+    expect(find.byKey(const ValueKey('resume-last-game')), findsNothing);
+    expect(find.byKey(const ValueKey('new-puzzle')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('checkpoints elapsed time while playing',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(MyApp(puzzlePool: _createTestPool()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+
+    final progress = await LastGameStore().load();
+    expect(progress?['elapsedSeconds'], greaterThanOrEqualTo(5));
   });
 
   testWidgets('renders and responds to the Sudoku play controls',

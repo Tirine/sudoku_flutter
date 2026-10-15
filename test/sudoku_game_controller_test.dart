@@ -97,4 +97,62 @@ void main() {
     expect(controller.selectedNumber, -1);
     expect(controller.isComplete, isFalse);
   });
+
+  test('undo keeps only the most recent three board changes', () {
+    for (var column = 0; column < 4; column++) {
+      controller.selectCell(0, column);
+      controller.selectNumber(column + 1);
+    }
+
+    expect(controller.canUndo, isTrue);
+    controller.undo();
+    controller.undo();
+    controller.undo();
+    controller.undo();
+
+    expect(controller.valueAt(0, 0), 1);
+    expect(controller.valueAt(0, 1), 0);
+    expect(controller.valueAt(0, 2), 0);
+    expect(controller.valueAt(0, 3), 0);
+    expect(controller.canUndo, isFalse);
+  });
+
+  test('undo restores note changes', () {
+    controller.toggleNotes(true);
+    controller.selectCell(0, 0);
+    controller.selectNumber(6);
+    expect(controller.notesAt(0, 0), contains(6));
+
+    controller.undo();
+
+    expect(controller.notesAt(0, 0), isEmpty);
+    expect(controller.valueAt(0, 0), 0);
+  });
+
+  test('exported progress restores board, notes, timer, and undo history', () {
+    controller.selectCell(0, 0);
+    controller.selectNumber(7);
+    controller.toggleNotes(true);
+    controller.selectCell(0, 1);
+    controller.selectNumber(4);
+    controller.elapsedSeconds = 42;
+    final savedProgress = controller.exportProgress();
+
+    final restoredGame = Sudoku(
+      seed: game.seed,
+      difficulty: game.difficulty,
+      initialise: false,
+    );
+    controller.load(restoredGame, startTimer: false);
+    controller.restoreProgress(savedProgress);
+
+    expect(controller.valueAt(0, 0), 7);
+    expect(controller.notesAt(0, 1), contains(4));
+    expect(controller.elapsedSeconds, 42);
+    expect(controller.canUndo, isTrue);
+
+    controller.undo();
+    expect(controller.notesAt(0, 1), isEmpty);
+    expect(controller.valueAt(0, 0), 7);
+  });
 }

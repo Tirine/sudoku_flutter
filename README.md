@@ -28,10 +28,11 @@ The levels are intended to reflect the solving effort a puzzle takes:
 - **Easy:** mostly direct placements, such as cells with only one possible number.
 - **Medium:** a mix of direct placements and scanning rows, columns, and boxes to find numbers that have only one possible location.
 - **Hard:** requires more sustained candidate tracking and common patterns such as pairs or pointing and claiming.
-- **Extreme:** may require advanced patterns or longer chains of deductions before a number can be placed.
-- **Almost-impossible:** uses the most advanced deterministic techniques supported by the generator's logical solver. Puzzles must still have a single solution and be solvable without guessing.
+- **Extreme:** may require advanced patterns or longer chains of deductions before a number can be placed, using deterministic techniques supported by a logical solver.
 
-These are target descriptions, not a guarantee that every puzzle requires those techniques. The generator does not assign a numeric difficulty rating; Almost-impossible puzzles are checked for unique solutions and for solvability using the logical techniques currently implemented for that level.
+Puzzles must all have a single solution and be solvable without guessing.
+
+These are target descriptions, not a guarantee that every puzzle follows are appropriately rated.
 
 There are two ways to enter a number:
 
@@ -39,6 +40,12 @@ There are two ways to enter a number:
 - **Cell, then number:** tap an empty square, then tap a digit on the number pad to enter it there.
 
 The **Erase** button clears the selected square when a square is selected. If no square is selected, tap **Erase**, then tap a square to clear it.
+
+### Undo and continuing a game
+
+**Undo** reverses the most recent board or notes change. Up to three changes are kept, so you can undo at most three steps. The undo history is saved with the game.
+
+When you reopen the app with a saved game, choose **Continue with last game** to restore the puzzle, your entries and notes, elapsed time, and available undo steps. Choose **Start new game** to discard that progress and begin another puzzle. This choice appears only when the app opens. Progress is saved as you play, the timer is checkpointed during play, and the current state is saved when the app is paused. Completing a puzzle clears the saved game.
 
 ### Notes
 

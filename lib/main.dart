@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:loader_overlay/loader_overlay.dart';
+import 'package:sudoku_flutter/last_game_store.dart';
 import 'package:sudoku_flutter/scoreboard.dart';
 import 'package:sudoku_flutter/sudoku.dart';
 import 'package:sudoku_flutter/sudoku_game_controller.dart';
@@ -59,8 +60,12 @@ class SudokuPage extends StatefulWidget {
   State<SudokuPage> createState() => _SudokuPageState();
 }
 
-class _SudokuPageState extends State<SudokuPage> {
+class _SudokuPageState extends State<SudokuPage> with WidgetsBindingObserver {
+  static const _elapsedCheckpointInterval = 5;
+
   final ScoreboardStore _scoreboardStore = ScoreboardStore();
+  final LastGameStore _lastGameStore = LastGameStore();
+  Future<void> _lastGameWrites = Future<void>.value();
   late final SudokuGameController _game = SudokuGameController(
     initialGame: Sudoku(difficulty: SudokuDifficulty.easy, initialise: false),
     startTimer: false,
@@ -73,28 +78,109 @@ class _SudokuPageState extends State<SudokuPage> {
   final TextEditingController _seedController = TextEditingController();
   bool _loading = true;
   bool _loadInProgress = false;
+  bool _hasSavedGame = false;
+  bool _currentGameTouched = false;
+  int _lastElapsedCheckpoint = 0;
   String? _lastIncorrectBoard;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _game.addListener(_onGameChanged);
     _puzzlePool.preloadAll();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadGame();
+      _initializeGame();
     });
+  }
+
+  Future<void> _initializeGame() async {
+    Map<String, dynamic>? savedProgress;
+    try {
+      savedProgress = await _lastGameStore.load();
+    } catch (_) {
+      await _lastGameStore.clear();
+    }
+    if (!mounted) return;
+    _hasSavedGame = savedProgress != null;
+    if (savedProgress == null) {
+      await _loadGame();
+      return;
+    }
+
+    final continueLastGame = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Welcome back'),
+        content: const Text('Would you like to continue your saved game?'),
+        actions: [
+          TextButton(
+            key: const ValueKey('start-new-game'),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Start new game'),
+          ),
+          FilledButton(
+            key: const ValueKey('continue-last-game'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Continue with last game'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (continueLastGame == true) {
+      await _resumeLastGame();
+    } else {
+      await _loadGame();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _game.removeListener(_onGameChanged);
     _game.dispose();
     _seedController.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _game.resumeTimer();
+      return;
+    }
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _game.pauseTimer();
+      if (!_loading &&
+          !_game.isComplete &&
+          (_currentGameTouched || !_hasSavedGame)) {
+        unawaited(_saveLastGame());
+      }
+    }
+  }
+
   void _onGameChanged() {
     if (mounted) setState(() {});
+    final elapsed = _game.elapsedSeconds;
+    if (_loading ||
+        _game.isComplete ||
+        !_hasSavedGame ||
+        elapsed - _lastElapsedCheckpoint < _elapsedCheckpointInterval) {
+      return;
+    }
+    _lastElapsedCheckpoint = elapsed;
+    _lastGameWrites = _lastGameWrites
+        .then((_) => _lastGameStore.saveElapsedSeconds(elapsed))
+        .catchError((Object error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save your game timer: $error')),
+        );
+      }
+    });
   }
 
   String durationToString(int duration) {
@@ -106,6 +192,7 @@ class _SudokuPageState extends State<SudokuPage> {
   Future<void> _loadGame({
     int? seed,
     SudokuDifficulty? difficulty,
+    bool saveAsLastGame = true,
   }) async {
     if (_loadInProgress) return;
     _loadInProgress = true;
@@ -125,6 +212,8 @@ class _SudokuPageState extends State<SudokuPage> {
       if (!mounted) return;
 
       _game.load(nextInstance);
+      _lastElapsedCheckpoint = 0;
+      _currentGameTouched = saveAsLastGame;
       setState(() {
         selectedDifficulty = nextDifficulty;
         _lastIncorrectBoard = null;
@@ -132,6 +221,7 @@ class _SudokuPageState extends State<SudokuPage> {
         _seedController.text = '${nextInstance.seed}';
       });
       context.loaderOverlay.hide();
+      if (saveAsLastGame) unawaited(_saveLastGame());
     } catch (error) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -147,18 +237,109 @@ class _SudokuPageState extends State<SudokuPage> {
   void _selectCell(int row, int column) {
     if (_loading) return;
     _game.selectCell(row, column);
+    _markGameTouched();
     unawaited(_verify());
   }
 
   void _selectNumber(int number) {
     if (_loading) return;
     _game.selectNumber(number);
+    _markGameTouched();
     unawaited(_verify());
+  }
+
+  void _toggleNotes(bool enabled) {
+    _game.toggleNotes(enabled);
+    _markGameTouched();
+  }
+
+  void _markGameTouched() {
+    _currentGameTouched = true;
+    unawaited(_saveLastGame());
+  }
+
+  Future<void> _saveLastGame() {
+    if (_game.isComplete) return Future<void>.value();
+    final progress = _game.exportProgress();
+    _lastElapsedCheckpoint = _game.elapsedSeconds;
+    _lastGameWrites =
+        _lastGameWrites.then((_) => _lastGameStore.save(progress)).then((_) {
+      if (mounted && !_hasSavedGame) {
+        setState(() => _hasSavedGame = true);
+      }
+    }).catchError((Object error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save your game: $error')),
+        );
+      }
+    });
+    return _lastGameWrites;
+  }
+
+  Future<void> _resumeLastGame() async {
+    if (_loadInProgress) return;
+    _loadInProgress = true;
+    setState(() => _loading = true);
+    final loaderOverlay = context.loaderOverlay;
+    loaderOverlay.show();
+    try {
+      final progress = await _lastGameStore.load();
+      if (progress == null) {
+        if (mounted) {
+          setState(() {
+            _hasSavedGame = false;
+            _loading = false;
+          });
+        }
+        return;
+      }
+      final seed = progress['seed'] as int;
+      final difficulty = SudokuDifficulty.values.firstWhere(
+        (candidate) => candidate.name == progress['difficulty'],
+      );
+      final game = await Sudoku.create(seed: seed, difficulty: difficulty);
+      if (!mounted) return;
+      _game.load(game);
+      _game.restoreProgress(progress);
+      _lastElapsedCheckpoint = _game.elapsedSeconds;
+      _currentGameTouched = true;
+      setState(() {
+        selectedDifficulty = difficulty;
+        _seedController.text = '$seed';
+        _lastIncorrectBoard = null;
+        _hasSavedGame = true;
+        _loading = false;
+      });
+    } catch (error) {
+      if (mounted) {
+        await _lastGameStore.clear();
+        if (!mounted) return;
+        setState(() {
+          _hasSavedGame = false;
+          _loading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not resume your game: $error')),
+        );
+      }
+    } finally {
+      loaderOverlay.hide();
+      _loadInProgress = false;
+    }
+  }
+
+  Future<void> _clearLastGame() async {
+    await _lastGameWrites;
+    await _lastGameStore.clear();
+    if (mounted) setState(() => _hasSavedGame = false);
   }
 
   Future<void> _verify() async {
     if (!_game.isFilled || _game.isComplete) return;
     if (_game.verifyAndComplete()) {
+      _currentGameTouched = false;
+      unawaited(_clearLastGame());
       final finishTime = _game.elapsedSeconds;
       final difficulty = _game.game.difficulty;
       int? scoreRank;
@@ -658,36 +839,63 @@ class _SudokuPageState extends State<SudokuPage> {
   }
 
   Widget _buildActions(BuildContext context) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: FilterChip(
-            key: const ValueKey('notes-toggle'),
-            selected: _game.notesEnabled,
-            onSelected: _loading || _game.isComplete ? null : _game.toggleNotes,
-            avatar: Icon(
-              _game.notesEnabled ? Icons.edit_note : Icons.edit_note_outlined,
-            ),
-            label: Text(_game.notesEnabled ? 'Notes on' : 'Notes'),
-            showCheckmark: false,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: OutlinedButton.icon(
-            key: const ValueKey('erase'),
-            onPressed:
-                _loading || _game.isComplete ? null : () => _selectNumber(0),
-            icon: const Icon(Icons.backspace_outlined),
-            label: const Text('Erase'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                key: const ValueKey('undo'),
+                onPressed: _loading || !_game.canUndo
+                    ? null
+                    : () {
+                        _game.undo();
+                        _markGameTouched();
+                      },
+                icon: const Icon(Icons.undo_rounded),
+                label: const Text('Undo'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
               ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilterChip(
+                key: const ValueKey('notes-toggle'),
+                selected: _game.notesEnabled,
+                onSelected: _loading || _game.isComplete ? null : _toggleNotes,
+                avatar: Icon(
+                  _game.notesEnabled
+                      ? Icons.edit_note
+                      : Icons.edit_note_outlined,
+                ),
+                label: Text(_game.notesEnabled ? 'Notes on' : 'Notes'),
+                showCheckmark: false,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                key: const ValueKey('erase'),
+                onPressed: _loading || _game.isComplete
+                    ? null
+                    : () => _selectNumber(0),
+                icon: const Icon(Icons.backspace_outlined),
+                label: const Text('Erase'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
