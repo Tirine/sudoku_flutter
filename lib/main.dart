@@ -475,32 +475,35 @@ class _SudokuPageState extends State<SudokuPage> with WidgetsBindingObserver {
                       ),
                     ],
                   )
-                : Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: horizontalPadding),
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 8),
-                        _buildHeader(context),
-                        const SizedBox(height: 12),
-                        _buildStatus(context),
-                        const SizedBox(height: 8),
-                        _buildSeedInput(context),
-                        Expanded(
-                          child: Center(
+                : SingleChildScrollView(
+                    child: Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: horizontalPadding),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 8),
+                          _buildHeader(context),
+                          const SizedBox(height: 12),
+                          _buildStatus(context),
+                          const SizedBox(height: 8),
+                          _buildSeedInput(context),
+                          Center(
                             child: ConstrainedBox(
                               constraints: BoxConstraints(
-                                maxWidth: min(600.0, constraints.maxHeight),
+                                maxWidth: min(
+                                  600.0,
+                                  constraints.maxWidth - horizontalPadding * 2,
+                                ),
                               ),
                               child: _buildBoard(context),
                             ),
                           ),
-                        ),
-                        _buildNumberPad(context),
-                        const SizedBox(height: 12),
-                        _buildActions(context),
-                        const SizedBox(height: 12),
-                      ],
+                          _buildNumberPad(context),
+                          const SizedBox(height: 12),
+                          _buildActions(context),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
                     ),
                   );
 
@@ -584,10 +587,9 @@ class _SudokuPageState extends State<SudokuPage> with WidgetsBindingObserver {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const Spacer(),
-                DropdownButtonHideUnderline(
-                  child: SizedBox(
-                    width: 180,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonHideUnderline(
                     child: DropdownButton<SudokuDifficulty>(
                       key: const ValueKey('difficulty'),
                       value: selectedDifficulty,

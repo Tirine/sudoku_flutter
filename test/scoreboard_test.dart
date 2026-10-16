@@ -54,4 +54,54 @@ void main() {
     expect(scores[SudokuDifficulty.easy], [42]);
     expect(scores[SudokuDifficulty.hard], [68]);
   });
+
+  test('rejects negative times', () async {
+    expect(
+      ScoreboardStore().recordTime(
+        difficulty: SudokuDifficulty.easy,
+        seconds: -1,
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('rejects malformed stored JSON and invalid score values', () async {
+    final store = ScoreboardStore();
+    SharedPreferences.setMockInitialValues({
+      'sudoku_best_times_easy': '{not json',
+    });
+    expect(store.loadScores(), throwsFormatException);
+
+    SharedPreferences.setMockInitialValues({
+      'sudoku_best_times_easy': '[60, -1]',
+    });
+    expect(store.loadScores(), throwsFormatException);
+  });
+
+  test('sorts and truncates preexisting records when loading', () async {
+    SharedPreferences.setMockInitialValues({
+      'sudoku_best_times_easy': '[90, 60, 80, 70]',
+    });
+
+    final scores = await ScoreboardStore().loadScores();
+
+    expect(scores[SudokuDifficulty.easy], [60, 70, 80]);
+  });
+
+  test('equal times share the first available rank', () async {
+    final store = ScoreboardStore();
+
+    expect(
+      await store.recordTime(difficulty: SudokuDifficulty.easy, seconds: 60),
+      1,
+    );
+    expect(
+      await store.recordTime(difficulty: SudokuDifficulty.easy, seconds: 60),
+      1,
+    );
+    expect(
+      await store.recordTime(difficulty: SudokuDifficulty.easy, seconds: 90),
+      3,
+    );
+  });
 }

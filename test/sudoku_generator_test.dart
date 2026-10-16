@@ -2,6 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sudoku_flutter/sudoku.dart';
 import 'package:sudoku_flutter/sudoku_logic_solver.dart';
 
+const _specialSeedDiagonals = <int, List<int>>{
+  314159265: [3, 1, 4, 1, 5, 9, 2, 6, 5],
+  628318531: [6, 2, 8, 3, 1, 8, 5, 3, 1],
+  123456789: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  987654321: [9, 8, 7, 6, 5, 4, 3, 2, 1],
+  241421356: [2, 4, 1, 4, 2, 1, 3, 5, 6],
+  915965594: [9, 1, 5, 9, 6, 5, 5, 9, 4],
+};
+
 void main() {
   late Sudoku puzzle;
   late Sudoku extremePuzzle;
@@ -76,6 +85,37 @@ void main() {
         ),
         isTrue,
         reason: 'Seed $seed should retain its custom column clues.',
+      );
+    }
+  });
+
+  test('special seeds generate valid puzzles from their diagonal patterns',
+      () async {
+    for (final entry in _specialSeedDiagonals.entries) {
+      final seed = entry.key;
+      final diagonal = entry.value;
+      final puzzle = await Sudoku.create(seed: seed);
+
+      expect(
+        List.generate(9, (index) => puzzle.solution[index][index]),
+        diagonal,
+        reason:
+            'Seed $seed should preserve its custom pattern in the solution.',
+      );
+      expect(
+        _isCompleteValidBoard(puzzle.solution),
+        isTrue,
+        reason: 'Seed $seed should produce a valid complete solution.',
+      );
+      expect(
+        _isValidPartialBoard(puzzle.board),
+        isTrue,
+        reason: 'Seed $seed should produce a valid puzzle.',
+      );
+      expect(
+        _countSolutions(puzzle.board),
+        1,
+        reason: 'Seed $seed should produce a uniquely solvable puzzle.',
       );
     }
   });

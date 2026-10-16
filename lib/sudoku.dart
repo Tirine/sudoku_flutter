@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
 
@@ -11,21 +9,114 @@ typedef Board = List<List<int>>;
 enum SudokuDifficulty { easy, medium, hard, extreme }
 
 class Sudoku {
+  static const _noValue = 0;
+  static const _boardSize = 9;
+  static const _boxSize = 3;
+  static const _randMax = 1 << 32;
+  static const _minimumClues = 17;
+  static const _initialMaxDepth = 5000;
+  static const _specialSeedDiagonals = <int, List<int>>{
+    314159265: [3, 1, 4, 1, 5, 9, 2, 6, 5],
+    628318531: [6, 2, 8, 3, 1, 8, 5, 3, 1],
+    123456789: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    987654321: [9, 8, 7, 6, 5, 4, 3, 2, 1],
+    241421356: [2, 4, 1, 4, 2, 1, 3, 5, 6],
+    915965594: [9, 1, 5, 9, 6, 5, 5, 9, 4],
+  };
+
   final SudokuDifficulty _difficulty;
   bool _initialised = false;
   int _seed;
   late int Function() _random;
   Board _sudoku = createEmpty();
   Board _solution = createEmpty();
-  int _sleep = 0;
+
+  static int _returnZero() => 0;
+
+  static Future<Sudoku> create(
+      {seed = -1, difficulty = SudokuDifficulty.easy}) async {
+    var obj = await Isolate.run(() async {
+      Sudoku created =
+          Sudoku(seed: seed, difficulty: difficulty, initialise: false);
+      await created.init();
+      return {
+        'seed': created.seed,
+        'initialised': created._initialised,
+        'solution': created.solution,
+        'sudoku': created._sudoku
+      };
+    });
+    var returnVal = Sudoku._(
+        obj['seed'] as int,
+        difficulty,
+        obj['initialised'] as bool,
+        obj['solution'] as Board,
+        obj['sudoku'] as Board);
+    printSudoku(returnVal._solution);
+    return returnVal;
+  }
+
+  static void _debugPrint(String string) {
+    if (kDebugMode) {
+      print(string);
+    }
+  }
+
+  static Board createEmpty() => Board.generate(
+      9, (index) => List<int>.generate(9, (index) => 0, growable: false),
+      growable: false);
+
+  static void _printLine() {
+    _debugPrint('-+ -+ -+ -+ -+ -+ -+ -+ -+ ');
+  }
+
+  static void printSudoku(Board board) {
+    for (int row = 0; row < board.length; row++) {
+      if (row % 3 == 0) {
+        _printLine();
+      }
+      _debugPrint(_formatRow(board[row]));
+    }
+    _printLine();
+  }
+
+  static String _formatRow(List<int> row) {
+    final output = StringBuffer();
+    for (int column = 0; column < row.length; column++) {
+      if (column % _boxSize == 0) output.write(': ');
+      output.write(row[column] == _noValue ? ' . ' : '${row[column]} ');
+    }
+    return '$output:';
+  }
+
+  static bool isValidCell(Board board, int row, int col, int value) {
+    final boxRow = row ~/ _boxSize * _boxSize;
+    final boxColumn = col ~/ _boxSize * _boxSize;
+    for (int index = 0; index < _boardSize; index++) {
+      if (board[row][index] == value ||
+          board[index][col] == value ||
+          board[boxRow + index ~/ _boxSize][boxColumn + index % _boxSize] ==
+              value) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static Board cloneBoard(Board obj) {
+    Board board = createEmpty();
+    for (var i = 0; i < obj.length; i++) {
+      board[i] = List<int>.from(obj[i]);
+    }
+    return board;
+  }
+
   Sudoku(
       {int seed = -1,
       SudokuDifficulty difficulty = SudokuDifficulty.easy,
-      initialise = true,
-      sleep = 0})
+      initialise = true})
       : _difficulty = difficulty,
-        _seed = seed,
-        _sleep = sleep {
+        _seed = seed {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
@@ -58,120 +149,107 @@ class Sudoku {
     return seed + (314159 * _difficulty.index);
   }
 
-  static Future<Sudoku> create(
-      {seed = -1, difficulty = SudokuDifficulty.easy, sleep = 0}) async {
-    var obj = await Isolate.run(() async {
-      Sudoku created = Sudoku(
-          seed: seed, difficulty: difficulty, initialise: false, sleep: sleep);
-      await created.init();
-      return {
-        'seed': created.seed,
-        'initialised': created._initialised,
-        'solution': created.solution,
-        'sudoku': created._sudoku
-      };
-    });
-    var returnVal = Sudoku._(
-        obj['seed'] as int,
-        difficulty,
-        obj['initialised'] as bool,
-        obj['solution'] as Board,
-        obj['sudoku'] as Board);
-    printSudoku(returnVal._solution);
-    return returnVal;
-  }
-
   Future<void> init() async {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
     _random = mulberry32(_offsetSeed());
     _initialised = true;
-    Board sudoku = createEmpty();
-    if (_seed < 100) {
-      int choose = _rand() - 1;
-      int direction = (_rand() % 2) == 0 ? -1 : 1;
-      if (_seed < 25) {
-        for (int i = 1; i <= sudoku[choose].length; i++) {
-          sudoku[choose][i - 1] = (10 + (i * direction)) % 10;
-        }
-      } else if (_seed < 50) {
-        for (int i = 1; i <= sudoku[choose].length; i++) {
-          sudoku[i - 1][choose] = (10 + (i * direction)) % 10;
-        }
-      } else if (_seed < 75) {
-        for (int i = 1; i <= sudoku[choose].length; i++) {
-          sudoku[((choose % 3) * 3) + ((i - 1) / 3).floor()]
-                  [((choose / 3).floor() * 3) + (i - 1) % 3] =
-              (10 + (i * direction)) % 10;
-        }
-      } else {
-        int upDown = (_rand() % 2) == 0 ? -1 : 1;
-        for (int i = 1; i <= sudoku[choose].length; i++) {
-          sudoku[((upDown * i - 1 + choose)) % 9][(((i) - 1)) % 9] =
-              (10 + (i * direction)) % 10;
-        }
-      }
-    }
-    if (_seed == 314159265) {
-      const piList = [3, 1, 4, 1, 5, 9, 2, 6, 5];
-      for (int i = 0; i < piList.length; i++) {
-        sudoku[i][i] = piList[i];
-      }
-    }
-    if (_seed == 271828182) {
-      const eList = [2, 7, 1, 8, 2, 8, 1, 8, 2];
-      for (int i = 0; i < eList.length; i++) {
-        sudoku[i][i] = eList[i];
-      }
-    }
-    if (_seed == 123456789) {
-      const counter = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-      for (int i = 0; i < counter.length; i++) {
-        sudoku[i][i] = counter[i];
-      }
-    }
 
-    Board solution = cloneBoard(sudoku);
+    var sudoku = _createSeedBoard();
+    final seedBoard = cloneBoard(sudoku);
     while (!(await solver(sudoku, offset: _rand))) {
-      sudoku = cloneBoard(solution);
+      sudoku = cloneBoard(seedBoard);
     }
-    solution = cloneBoard(sudoku);
-    bool generated = false;
-    int maxDepth = 5000;
-    int minFill = 17;
-    if (_difficulty != SudokuDifficulty.extreme) {
-      minFill += 16;
-      if (_difficulty == SudokuDifficulty.easy) {
-        minFill += 16;
-      } else if (_difficulty == SudokuDifficulty.medium) {
-        minFill += 8;
+    final solution = cloneBoard(sudoku);
+    _sudoku = await _removeClues(
+      sudoku,
+      solution,
+      minFilled: _minimumClueCount(),
+    );
+    _solution = solution;
+  }
+
+  Board _createSeedBoard() {
+    final sudoku = createEmpty();
+    _applySmallSeedPattern(sudoku);
+    _applySpecialSeedPattern(sudoku);
+    return sudoku;
+  }
+
+  void _applySmallSeedPattern(Board board) {
+    if (_seed >= 100) return;
+
+    final pattern = _seed ~/ 25;
+    final choose = _rand() - 1;
+    final direction = _rand().isEven ? -1 : 1;
+    final upDown = pattern == 3 ? (_rand().isEven ? -1 : 1) : null;
+
+    for (var index = 1; index <= 9; index++) {
+      final digit = (10 + index * direction) % 10;
+      switch (pattern) {
+        case 0:
+          board[choose][index - 1] = digit;
+          break;
+        case 1:
+          board[index - 1][choose] = digit;
+          break;
+        case 2:
+          final row = (choose % 3) * 3 + ((index - 1) / 3).floor();
+          final column = (choose ~/ 3) * 3 + (index - 1) % 3;
+          board[row][column] = digit;
+          break;
+        default:
+          final row = (upDown! * index - 1 + choose) % 9;
+          board[row][index - 1] = digit;
       }
     }
-    while (!generated) {
+  }
+
+  void _applySpecialSeedPattern(Board board) {
+    final diagonal = _specialSeedDiagonals[_seed];
+    if (diagonal == null) return;
+
+    for (var index = 0; index < diagonal.length; index++) {
+      board[index][index] = diagonal[index];
+    }
+  }
+
+  int _minimumClueCount() {
+    switch (_difficulty) {
+      case SudokuDifficulty.easy:
+        return _minimumClues + 32;
+      case SudokuDifficulty.medium:
+        return _minimumClues + 24;
+      case SudokuDifficulty.hard:
+        return _minimumClues + 16;
+      default:
+        return _minimumClues;
+    }
+  }
+
+  Future<Board> _removeClues(
+    Board sudoku,
+    Board solution, {
+    required int minFilled,
+  }) async {
+    var maxDepth = _initialMaxDepth;
+    while (true) {
       try {
-        generated = await _generateBoard(sudoku,
-            maxDepth: maxDepth,
-            minFilled: minFill,
-            requireLogicalSolve: _difficulty == SudokuDifficulty.extreme);
+        final generated = await _generateBoard(
+          sudoku,
+          maxDepth: maxDepth,
+          minFilled: minFilled,
+          requireLogicalSolve: _difficulty == SudokuDifficulty.extreme,
+        );
+        if (generated) return sudoku;
       } catch (e) {
         maxDepth *= 2;
         _debugPrint('Retry...');
         sudoku = cloneBoard(solution);
+        await Future<void>.delayed(Duration.zero);
       }
     }
-    _solution = solution;
-    _sudoku = sudoku;
-    // printSudoku(_solution);
-    // printSudoku(_sudoku);
-    // _debugPrint(_sudoku.fold(
-    //     '',
-    //     (previousValue, element) =>
-    //         previousValue +
-    //         element.fold(
-    //             '',
-    //             (previousValue, element) =>
-    //                 '$previousValue${element == 0 ? '.' : element}')));
   }
 
   SudokuDifficulty get difficulty => _difficulty;
@@ -208,44 +286,39 @@ class Sudoku {
     return true;
   }
 
-  Future<bool> _generateBoard(Board board,
-      {minFilled = 0, maxDepth = 2e4, requireLogicalSolve = false}) async {
-    int rowI = _rand() - 1;
-    int colI = _rand() - 1;
+  Future<bool> _generateBoard(
+    Board board, {
+    int minFilled = 0,
+    int maxDepth = 20000,
+    bool requireLogicalSolve = false,
+  }) async {
+    var rowI = _rand() - 1;
+    var colI = _rand() - 1;
     void next() {
       rowI += 1;
-      if (rowI == 9) {
-        rowI %= 9;
-        colI += 1;
-        colI %= 9;
+      if (rowI == _boardSize) {
+        rowI %= _boardSize;
+        colI = (colI + 1) % _boardSize;
       }
-      sleep(Duration(milliseconds: _sleep));
     }
 
-    // int tries = 0;
-    int filled = 81;
+    var filled = _boardSize * _boardSize;
     final logicalSolver = requireLogicalSolve ? SudokuLogicSolver() : null;
-    uniqueCellFunc() =>
-        isUniqueCell(board, rowI, colI, offset: _rand, maxDepth: maxDepth);
 
-    for (int i = 0; i <= 9; i++) {
-      for (int j = 0; j <= 9; j++) {
-        // tries++;
-        // debugPrint('tries', (i), (j))
-        if (board[rowI][colI] != _noValue && await uniqueCellFunc()) {
-          final clue = board[rowI][colI];
-          board[rowI][colI] = _noValue;
-          if (logicalSolver != null && !logicalSolver.canSolve(board)) {
-            board[rowI][colI] = clue;
-            next();
-          } else {
-            filled--;
-            // printSudoku(board)
-            rowI = _rand() - 1;
-            colI = _rand() - 1;
-            i = 0;
-            j = 0;
-          }
+    for (int i = 0; i <= _boardSize; i++) {
+      for (int j = 0; j <= _boardSize; j++) {
+        if (await _tryRemoveClue(
+          board,
+          rowI,
+          colI,
+          logicalSolver: logicalSolver,
+          maxDepth: maxDepth,
+        )) {
+          filled--;
+          rowI = _rand() - 1;
+          colI = _rand() - 1;
+          i = 0;
+          j = 0;
         } else {
           next();
         }
@@ -257,117 +330,117 @@ class Sudoku {
     return true;
   }
 
-  static const _noValue = 0;
-  static const _randMax = 1 << 32;
-  static int _returnZero() => 0;
-  static void _debugPrint(String string) {
-    if (kDebugMode) {
-      print(string);
+  Future<bool> _tryRemoveClue(
+    Board board,
+    int row,
+    int column, {
+    required SudokuLogicSolver? logicalSolver,
+    required int maxDepth,
+  }) async {
+    if (board[row][column] == _noValue ||
+        !await isUniqueCell(
+          board,
+          row,
+          column,
+          offset: _rand,
+          maxDepth: maxDepth,
+        )) {
+      return false;
     }
-  }
 
-  static Board createEmpty() => Board.generate(
-      9, (index) => List<int>.generate(9, (index) => 0, growable: false),
-      growable: false);
-
-  static void _printLine() {
-    _debugPrint('-+ -+ -+ -+ -+ -+ -+ -+ -+ ');
-  }
-
-  static void printSudoku(Board board) {
-    for (int row = 0; row < board.length; row++) {
-      String string = '';
-      if (row % 3 == 0) {
-        _printLine();
-      }
-      for (int column = 0; column < board[row].length; column++) {
-        if (column % 3 == 0) {
-          string += ': ';
-        }
-        if (board[row][column] != 0) {
-          string += '${board[row][column]} ';
-        } else {
-          string += ' . ';
-        }
-      }
-      _debugPrint('$string:');
-    }
-    _printLine();
-  }
-
-  static bool isValidCell(board, row, col, value) {
-    for (int i = 0; i < 9; i++) {
-      final m = 3 * (row / 3).floor() + (i / 3).floor();
-      final n = 3 * (col / 3).floor() + i % 3;
-      if (board[row][i] == value ||
-          board[i][col] == value ||
-          board[m][n] == value) {
-        return false;
-      }
+    final clue = board[row][column];
+    board[row][column] = _noValue;
+    if (logicalSolver != null && !logicalSolver.canSolve(board)) {
+      board[row][column] = clue;
+      return false;
     }
     return true;
   }
 
-  static Board cloneBoard(Board obj) {
-    Board board = createEmpty();
-    for (var i = 0; i < obj.length; i++) {
-      board[i] = List<int>.from(obj[i]);
-    }
-    return board;
+  Future<bool> solver(
+    Board data, {
+    int Function() offset = _returnZero,
+    int maxDepth = 0,
+  }) async {
+    return _solveBoard(data, offset, maxDepth, _SolverProgress());
   }
 
-  Future<bool> solver(Board data, {offset = _returnZero, maxDepth = 0}) async {
-    int depth = 0;
-    bool sudokuSolverImpl(Board data) {
-      if (maxDepth > 1000 && depth > maxDepth) {
-        throw 'Went too deep';
-      }
-      for (int i = 0; i < 9; i++) {
-        for (int j = 0; j < 9; j++) {
-          if (data[i][j] == _noValue) {
-            final offsetVal = offset();
-            for (int value = 0; value < 9; value++) {
-              final val = (offsetVal + value) % 9 + 1;
-              if (isValidCell(data, i, j, val)) {
-                data[i][j] = val;
-                depth++;
-                if (sudokuSolverImpl(data)) {
-                  return true;
-                } else {
-                  data[i][j] = _noValue;
-                }
-              }
-            }
-            return false;
-          }
+  bool _solveBoard(
+    Board board,
+    int Function() offset,
+    int maxDepth,
+    _SolverProgress progress,
+  ) {
+    if (maxDepth > 1000 && progress.visitedCandidates > maxDepth) {
+      throw 'Went too deep';
+    }
+
+    for (int row = 0; row < _boardSize; row++) {
+      for (int column = 0; column < _boardSize; column++) {
+        if (board[row][column] == _noValue) {
+          return _trySolveCell(
+            board,
+            row,
+            column,
+            offset(),
+            offset,
+            maxDepth,
+            progress,
+          );
         }
       }
-      sleep(Duration(microseconds: _sleep));
-      return true;
     }
 
-    try {
-      return sudokuSolverImpl(data);
-    } finally {
-      // debugPrint('$depth');
-    }
+    return true;
   }
 
-  Future<bool> isUniqueCell(Board board, row, col,
-      {offset = _returnZero, maxDepth = 1e4}) async {
-    final val = board[row][col];
-    for (int value = 1; value < 10; value++) {
-      if (val == value) {
+  bool _trySolveCell(
+    Board board,
+    int row,
+    int column,
+    int offsetValue,
+    int Function() offset,
+    int maxDepth,
+    _SolverProgress progress,
+  ) {
+    for (int candidate = 0; candidate < _boardSize; candidate++) {
+      final value = (offsetValue + candidate) % _boardSize + 1;
+      if (!isValidCell(board, row, column, value)) continue;
+
+      board[row][column] = value;
+      progress.visitedCandidates++;
+      if (_solveBoard(board, offset, maxDepth, progress)) return true;
+      board[row][column] = _noValue;
+    }
+    return false;
+  }
+
+  Future<bool> isUniqueCell(
+    Board board,
+    int row,
+    int column, {
+    int Function() offset = _returnZero,
+    int maxDepth = 10000,
+  }) async {
+    final originalValue = board[row][column];
+    final candidateBoard = cloneBoard(board);
+
+    for (int value = 1; value <= _boardSize; value++) {
+      if (value == originalValue ||
+          !isValidCell(candidateBoard, row, column, value)) {
         continue;
       }
-      Board cloned = cloneBoard(board);
-      if (isValidCell(cloned, row, col, value)) {
-        cloned[row][col] = value;
-        if (await solver(cloned, offset: offset, maxDepth: maxDepth)) {
-          return false;
-        }
+
+      candidateBoard[row][column] = value;
+      if (await solver(candidateBoard, offset: offset, maxDepth: maxDepth)) {
+        return false;
       }
+      candidateBoard[row][column] = originalValue;
     }
     return true;
   }
+}
+
+class _SolverProgress {
+  int visitedCandidates = 0;
 }
