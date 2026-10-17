@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sudoku_flutter/sudoku.dart';
-import 'package:sudoku_flutter/sudoku_logic_solver.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
+import 'package:sudoku_flutter/game/sudoku_logic_solver.dart';
 
 const _specialSeedDiagonals = <int, List<int>>{
   314159265: [3, 1, 4, 1, 5, 9, 2, 6, 5],
@@ -12,18 +12,18 @@ const _specialSeedDiagonals = <int, List<int>>{
 };
 
 void main() {
-  late Sudoku puzzle;
-  late Sudoku extremePuzzle;
-  late Sudoku almostImpossiblePuzzle;
+  late SudokuGenerator puzzle;
+  late SudokuGenerator extremePuzzle;
+  late SudokuGenerator almostImpossiblePuzzle;
 
   setUpAll(() async {
-    puzzle =
-        await Sudoku.create(seed: 123456, difficulty: SudokuDifficulty.easy);
-    extremePuzzle = await Sudoku.create(
+    puzzle = await SudokuGenerator.create(
+        seed: 123456, difficulty: SudokuDifficulty.easy);
+    extremePuzzle = await SudokuGenerator.create(
       seed: 654321,
       difficulty: SudokuDifficulty.extreme,
     );
-    almostImpossiblePuzzle = await Sudoku.create(
+    almostImpossiblePuzzle = await SudokuGenerator.create(
       seed: 789012,
       difficulty: SudokuDifficulty.extreme,
     );
@@ -51,7 +51,7 @@ void main() {
   });
 
   test('same seed and difficulty reproduce the puzzle and solution', () async {
-    final repeated = await Sudoku.create(
+    final repeated = await SudokuGenerator.create(
       seed: 123456,
       difficulty: SudokuDifficulty.easy,
     );
@@ -61,8 +61,8 @@ void main() {
   });
 
   test('random puzzle seed replays the displayed puzzle', () async {
-    final randomPuzzle = await Sudoku.create();
-    final replay = await Sudoku.create(
+    final randomPuzzle = await SudokuGenerator.create();
+    final replay = await SudokuGenerator.create(
       seed: randomPuzzle.seed,
       difficulty: randomPuzzle.difficulty,
     );
@@ -73,7 +73,7 @@ void main() {
 
   test('seeds 76 and 100 keep a custom clue in every row and column', () async {
     for (final seed in [76, 100]) {
-      final puzzle = await Sudoku.create(seed: seed);
+      final puzzle = await SudokuGenerator.create(seed: seed);
       expect(
         puzzle.board.every((row) => row.any((value) => value != 0)),
         isTrue,
@@ -94,7 +94,7 @@ void main() {
     for (final entry in _specialSeedDiagonals.entries) {
       final seed = entry.key;
       final diagonal = entry.value;
-      final puzzle = await Sudoku.create(seed: seed);
+      final puzzle = await SudokuGenerator.create(seed: seed);
 
       expect(
         List.generate(9, (index) => puzzle.solution[index][index]),
@@ -127,7 +127,7 @@ void main() {
       for (var column = 0; column < 9; column++) {
         if (extremePuzzle.board[row][column] == 0) continue;
 
-        final withClueRemoved = Sudoku.cloneBoard(extremePuzzle.board);
+        final withClueRemoved = SudokuGenerator.cloneBoard(extremePuzzle.board);
         withClueRemoved[row][column] = 0;
         expect(
           _countSolutions(withClueRemoved),
@@ -156,7 +156,7 @@ void main() {
   test(
       'seed 79505584 produces a unique almost-impossible (removed, logic in extreme) puzzle',
       () async {
-    final seededPuzzle = await Sudoku.create(
+    final seededPuzzle = await SudokuGenerator.create(
       seed: 79505584,
       difficulty: SudokuDifficulty.extreme,
     );
@@ -173,7 +173,8 @@ void main() {
       for (var column = 0; column < 9; column++) {
         if (almostImpossiblePuzzle.board[row][column] == 0) continue;
 
-        final withClueRemoved = Sudoku.cloneBoard(almostImpossiblePuzzle.board);
+        final withClueRemoved =
+            SudokuGenerator.cloneBoard(almostImpossiblePuzzle.board);
         withClueRemoved[row][column] = 0;
         final stillUnique = _countSolutions(withClueRemoved) == 1;
         final stillSolvableWithoutGuessing = solver.canSolve(withClueRemoved);
@@ -219,12 +220,14 @@ bool _isValidPartialBoard(Board board) {
     for (var column = 0; column < 9; column++) {
       final value = board[row][column];
       if (value < 0 || value > 9) return false;
-      if (value != 0 && !Sudoku.isValidCell(board, row, column, value)) {
+      if (value != 0 &&
+          !SudokuGenerator.isValidCell(board, row, column, value)) {
         // isValidCell sees the value in its own cell, so check against a copy
         // with that cell temporarily cleared.
-        final withoutCell = Sudoku.cloneBoard(board);
+        final withoutCell = SudokuGenerator.cloneBoard(board);
         withoutCell[row][column] = 0;
-        if (!Sudoku.isValidCell(withoutCell, row, column, value)) return false;
+        if (!SudokuGenerator.isValidCell(withoutCell, row, column, value))
+          return false;
       }
     }
   }
@@ -242,7 +245,7 @@ bool _containsDigitsOneToNine(List<int> values) =>
         );
 
 int _countSolutions(Board source) {
-  final board = Sudoku.cloneBoard(source);
+  final board = SudokuGenerator.cloneBoard(source);
 
   int search() {
     var bestRow = -1;
@@ -255,7 +258,7 @@ int _countSolutions(Board source) {
 
         final candidates = [
           for (var value = 1; value <= 9; value++)
-            if (Sudoku.isValidCell(board, row, column, value)) value,
+            if (SudokuGenerator.isValidCell(board, row, column, value)) value,
         ];
         if (candidates.isEmpty) return 0;
         if (bestCandidates == null ||

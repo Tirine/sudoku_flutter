@@ -1,4 +1,4 @@
-import 'package:sudoku_flutter/sudoku.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
 
 /// Solves puzzles using deterministic candidate techniques only.
 ///
@@ -9,7 +9,7 @@ class SudokuLogicSolver {
     if (source.length != 9 || source.any((row) => row.length != 9)) {
       return false;
     }
-    final board = Sudoku.cloneBoard(source);
+    final board = SudokuGenerator.cloneBoard(source);
 
     while (true) {
       var candidates = _candidatesFor(board);
@@ -47,15 +47,17 @@ class SudokuLogicSolver {
         if (value < 0 || value > 9) return null;
         if (value == 0) {
           for (var digit = 1; digit <= 9; digit++) {
-            if (Sudoku.isValidCell(board, row, column, digit)) {
+            if (SudokuGenerator.isValidCell(board, row, column, digit)) {
               candidates[row][column].add(digit);
             }
           }
           if (candidates[row][column].isEmpty) return null;
         } else {
-          final withoutCell = Sudoku.cloneBoard(board);
+          final withoutCell = SudokuGenerator.cloneBoard(board);
           withoutCell[row][column] = 0;
-          if (!Sudoku.isValidCell(withoutCell, row, column, value)) return null;
+          if (!SudokuGenerator.isValidCell(withoutCell, row, column, value)) {
+            return null;
+          }
         }
       }
     }

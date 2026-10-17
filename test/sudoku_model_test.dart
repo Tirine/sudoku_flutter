@@ -1,17 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sudoku_flutter/sudoku.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
 
 void main() {
   test('empty uninitialized puzzle reports its state and fill status', () {
-    final game = Sudoku(initialise: false);
+    final game = SudokuGenerator(initialise: false);
 
     expect(game.initialised, isFalse);
     expect(game.filled(), isFalse);
-    expect(game.board, Sudoku.createEmpty());
+    expect(game.board, SudokuGenerator.createEmpty());
   });
 
   test('filled puzzle reports complete and verifies against its solution', () {
-    final game = Sudoku(initialise: false);
+    final game = SudokuGenerator(initialise: false);
     const solved = [
       [1, 2, 3, 4, 5, 6, 7, 8, 9],
       [4, 5, 6, 7, 8, 9, 1, 2, 3],
@@ -35,18 +35,18 @@ void main() {
   });
 
   test('isValidCell rejects row, column, and box conflicts', () {
-    final board = Sudoku.createEmpty();
+    final board = SudokuGenerator.createEmpty();
     board[0][0] = 5;
 
-    expect(Sudoku.isValidCell(board, 0, 1, 5), isFalse);
-    expect(Sudoku.isValidCell(board, 1, 0, 5), isFalse);
-    expect(Sudoku.isValidCell(board, 1, 1, 5), isFalse);
-    expect(Sudoku.isValidCell(board, 1, 1, 6), isTrue);
+    expect(SudokuGenerator.isValidCell(board, 0, 1, 5), isFalse);
+    expect(SudokuGenerator.isValidCell(board, 1, 0, 5), isFalse);
+    expect(SudokuGenerator.isValidCell(board, 1, 1, 5), isFalse);
+    expect(SudokuGenerator.isValidCell(board, 1, 1, 6), isTrue);
   });
 
   test('cloneBoard copies each row independently', () {
-    final original = Sudoku.createEmpty()..[0][0] = 4;
-    final clone = Sudoku.cloneBoard(original);
+    final original = SudokuGenerator.createEmpty()..[0][0] = 4;
+    final clone = SudokuGenerator.cloneBoard(original);
 
     expect(clone, original);
     clone[0][0] = 9;

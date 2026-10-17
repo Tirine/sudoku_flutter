@@ -1,16 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:sudoku_flutter/sudoku.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
 
 /// Owns the mutable state for one Sudoku game, independently of its widgets.
 class SudokuGameController extends ChangeNotifier {
   static const maxUndoSteps = 3;
-  SudokuGameController({required Sudoku initialGame, bool startTimer = true}) {
+  SudokuGameController(
+      {required SudokuGenerator initialGame, bool startTimer = true}) {
     load(initialGame, startTimer: startTimer);
   }
 
-  late Sudoku game;
+  late SudokuGenerator game;
   late List<List<bool>> _editable;
   late List<List<Set<int>>> _notes;
   final List<_GameProgress> _undoHistory = [];
@@ -30,7 +31,7 @@ class SudokuGameController extends ChangeNotifier {
   int valueAt(int row, int column) => game.board[row][column];
   bool get isFilled => game.filled();
 
-  void load(Sudoku nextGame, {bool startTimer = true}) {
+  void load(SudokuGenerator nextGame, {bool startTimer = true}) {
     _timer?.cancel();
     game = nextGame;
     _editable = List.generate(

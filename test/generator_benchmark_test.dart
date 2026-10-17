@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sudoku_flutter/sudoku.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
 
 const _baselinePath = 'benchmark/generator_baseline.json';
 const _latestReportPath = 'benchmark/results/latest.json';
@@ -24,10 +24,10 @@ void main() {
     final cases = <Map<String, Object>>[];
     for (final benchmarkCase in _benchmarkCases) {
       final timingsMs = <double>[];
-      Sudoku? puzzle;
+      SudokuGenerator? puzzle;
       for (var iteration = 0; iteration < _iterationsPerCase; iteration++) {
         final stopwatch = Stopwatch()..start();
-        final generated = await Sudoku.create(
+        final generated = await SudokuGenerator.create(
           seed: benchmarkCase.seed,
           difficulty: benchmarkCase.difficulty,
         );
@@ -136,7 +136,7 @@ Future<void> _writeJson(String path, Map<String, Object> contents) async {
   await file.writeAsString('${encoder.convert(contents)}\n');
 }
 
-void _validateGeneratedPuzzle(Sudoku puzzle) {
+void _validateGeneratedPuzzle(SudokuGenerator puzzle) {
   expect(
     _isCompleteSolution(puzzle.solution),
     isTrue,
@@ -194,7 +194,7 @@ bool _isCompleteSolution(Board board) {
 }
 
 int _countSolutions(Board source) {
-  final board = Sudoku.cloneBoard(source);
+  final board = SudokuGenerator.cloneBoard(source);
   final rows = List<int>.filled(9, 0);
   final columns = List<int>.filled(9, 0);
   final boxes = List<int>.filled(9, 0);

@@ -1,14 +1,14 @@
 import 'dart:isolate';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
-import 'package:sudoku_flutter/sudoku_logic_solver.dart';
+import 'package:sudoku_flutter/game/sudoku_logic_solver.dart';
+import 'package:sudoku_flutter/utils.dart';
 
 typedef Board = List<List<int>>;
 
 enum SudokuDifficulty { easy, medium, hard, extreme }
 
-class Sudoku {
+class SudokuGenerator {
   static const _noValue = 0;
   static const _boardSize = 9;
   static const _boxSize = 3;
@@ -33,11 +33,11 @@ class Sudoku {
 
   static int _returnZero() => 0;
 
-  static Future<Sudoku> create(
-      {seed = -1, difficulty = SudokuDifficulty.easy}) async {
+  static Future<SudokuGenerator> create(
+      {int? seed, difficulty = SudokuDifficulty.easy}) async {
     var obj = await Isolate.run(() async {
-      Sudoku created =
-          Sudoku(seed: seed, difficulty: difficulty, initialise: false);
+      SudokuGenerator created = SudokuGenerator(
+          seed: seed ?? -1, difficulty: difficulty, initialise: false);
       await created.init();
       return {
         'seed': created.seed,
@@ -46,7 +46,7 @@ class Sudoku {
         'sudoku': created._sudoku
       };
     });
-    var returnVal = Sudoku._(
+    var returnVal = SudokuGenerator._(
         obj['seed'] as int,
         difficulty,
         obj['initialised'] as bool,
@@ -56,18 +56,12 @@ class Sudoku {
     return returnVal;
   }
 
-  static void _debugPrint(String string) {
-    if (kDebugMode) {
-      print(string);
-    }
-  }
-
   static Board createEmpty() => Board.generate(
       9, (index) => List<int>.generate(9, (index) => 0, growable: false),
       growable: false);
 
   static void _printLine() {
-    _debugPrint('-+ -+ -+ -+ -+ -+ -+ -+ -+ ');
+    printDebug('-+ -+ -+ -+ -+ -+ -+ -+ -+ ');
   }
 
   static void printSudoku(Board board) {
@@ -75,7 +69,7 @@ class Sudoku {
       if (row % 3 == 0) {
         _printLine();
       }
-      _debugPrint(_formatRow(board[row]));
+      printDebug(_formatRow(board[row]));
     }
     _printLine();
   }
@@ -111,7 +105,7 @@ class Sudoku {
     return board;
   }
 
-  Sudoku(
+  SudokuGenerator(
       {int seed = -1,
       SudokuDifficulty difficulty = SudokuDifficulty.easy,
       initialise = true})
@@ -126,8 +120,8 @@ class Sudoku {
       init();
     }
   }
-  Sudoku._(this._seed, this._difficulty, this._initialised, this._solution,
-      this._sudoku) {
+  SudokuGenerator._(this._seed, this._difficulty, this._initialised,
+      this._solution, this._sudoku) {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
@@ -236,7 +230,7 @@ class Sudoku {
     var maxDepth = _initialMaxDepth;
     while (true) {
       try {
-        final generated = await _generateBoard(
+        final generated = _generateBoard(
           sudoku,
           maxDepth: maxDepth,
           minFilled: minFilled,
@@ -245,7 +239,7 @@ class Sudoku {
         if (generated) return sudoku;
       } catch (e) {
         maxDepth *= 2;
-        _debugPrint('Retry...');
+        printDebug('Retry...');
         sudoku = cloneBoard(solution);
         await Future<void>.delayed(Duration.zero);
       }
@@ -286,12 +280,12 @@ class Sudoku {
     return true;
   }
 
-  Future<bool> _generateBoard(
+  bool _generateBoard(
     Board board, {
     int minFilled = 0,
     int maxDepth = 20000,
     bool requireLogicalSolve = false,
-  }) async {
+  }) {
     var rowI = _rand() - 1;
     var colI = _rand() - 1;
     void next() {
@@ -307,7 +301,7 @@ class Sudoku {
 
     for (int i = 0; i <= _boardSize; i++) {
       for (int j = 0; j <= _boardSize; j++) {
-        if (await _tryRemoveClue(
+        if (_tryRemoveClue(
           board,
           rowI,
           colI,
@@ -330,15 +324,15 @@ class Sudoku {
     return true;
   }
 
-  Future<bool> _tryRemoveClue(
+  bool _tryRemoveClue(
     Board board,
     int row,
     int column, {
     required SudokuLogicSolver? logicalSolver,
     required int maxDepth,
-  }) async {
+  }) {
     if (board[row][column] == _noValue ||
-        !await isUniqueCell(
+        !_isUniqueCell(
           board,
           row,
           column,
@@ -421,7 +415,16 @@ class Sudoku {
     int column, {
     int Function() offset = _returnZero,
     int maxDepth = 10000,
-  }) async {
+  }) async =>
+      _isUniqueCell(board, row, column, offset: offset, maxDepth: maxDepth);
+
+  bool _isUniqueCell(
+    Board board,
+    int row,
+    int column, {
+    required int Function() offset,
+    required int maxDepth,
+  }) {
     final originalValue = board[row][column];
     final candidateBoard = cloneBoard(board);
 
@@ -432,7 +435,12 @@ class Sudoku {
       }
 
       candidateBoard[row][column] = value;
-      if (await solver(candidateBoard, offset: offset, maxDepth: maxDepth)) {
+      if (_solveBoard(
+        candidateBoard,
+        offset,
+        maxDepth,
+        _SolverProgress(),
+      )) {
         return false;
       }
       candidateBoard[row][column] = originalValue;

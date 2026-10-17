@@ -1,14 +1,15 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sudoku_flutter/sudoku.dart';
-import 'package:sudoku_flutter/sudoku_game_controller.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
+import 'package:sudoku_flutter/game/sudoku_game_controller.dart';
 
 void main() {
-  late Sudoku game;
+  late SudokuGenerator game;
   late SudokuGameController controller;
 
   setUp(() {
-    game = Sudoku(difficulty: SudokuDifficulty.easy, initialise: false);
+    game =
+        SudokuGenerator(difficulty: SudokuDifficulty.easy, initialise: false);
     controller = SudokuGameController(
       initialGame: game,
       startTimer: false,
@@ -82,7 +83,7 @@ void main() {
     controller.selectNumber(2);
     expect(controller.notesAt(0, 0), contains(2));
 
-    final nextGame = Sudoku(
+    final nextGame = SudokuGenerator(
       seed: 2,
       difficulty: SudokuDifficulty.medium,
       initialise: false,
@@ -139,7 +140,7 @@ void main() {
     controller.elapsedSeconds = 42;
     final savedProgress = controller.exportProgress();
 
-    final restoredGame = Sudoku(
+    final restoredGame = SudokuGenerator(
       seed: game.seed,
       difficulty: game.difficulty,
       initialise: false,

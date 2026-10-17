@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sudoku_flutter/sudoku.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
 
 class ScoreboardStore {
   static const _keyPrefix = 'sudoku_best_times_';

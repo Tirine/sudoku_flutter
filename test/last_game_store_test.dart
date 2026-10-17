@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sudoku_flutter/last_game_store.dart';
+import 'package:sudoku_flutter/storage/last_game_store.dart';
 
 void main() {
   const savedGameKey = 'sudoku_last_game_v1';
