@@ -541,6 +541,47 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('highlights Notes and Erase when selected', (tester) async {
+    await _pumpGame(tester);
+    final notesFinder = find.byKey(const ValueKey('notes-toggle'));
+    final eraseFinder = find.byKey(const ValueKey('erase'));
+    final colors = Theme.of(tester.element(notesFinder)).colorScheme;
+
+    OutlinedButton notesButton() => tester.widget<OutlinedButton>(notesFinder);
+    OutlinedButton eraseButton() => tester.widget<OutlinedButton>(eraseFinder);
+
+    expect(notesButton().style!.backgroundColor?.resolve({}), isNull);
+    expect(eraseButton().style!.backgroundColor?.resolve({}), isNull);
+
+    await tester.tap(notesFinder);
+    await tester.pump();
+    expect(
+      notesButton().style!.backgroundColor!.resolve({}),
+      colors.primaryContainer,
+    );
+    expect(
+      notesButton().style!.foregroundColor!.resolve({}),
+      colors.onPrimaryContainer,
+    );
+
+    await tester.tap(notesFinder);
+    await tester.tap(eraseFinder);
+    await tester.pump();
+    expect(notesButton().style!.backgroundColor?.resolve({}), isNull);
+    expect(
+      eraseButton().style!.backgroundColor!.resolve({}),
+      colors.primaryContainer,
+    );
+    expect(
+      eraseButton().style!.foregroundColor!.resolve({}),
+      colors.onPrimaryContainer,
+    );
+
+    await tester.tap(eraseFinder);
+    await tester.pump();
+    expect(eraseButton().style!.backgroundColor?.resolve({}), isNull);
+  });
+
   testWidgets('shows incorrect completion feedback once for the same board',
       (tester) async {
     await _pumpGame(tester, game: _nearlySolvedGame());

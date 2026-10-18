@@ -469,7 +469,7 @@ class _SudokuPageState extends State<SudokuPage> {
   }
 
   Widget _buildHeader(BuildContext context, double scaleFactor) {
-    final double textSize = 18 * scaleFactor;
+    final double textSize = 17 * scaleFactor;
     return Row(
       children: [
         Expanded(
@@ -489,7 +489,7 @@ class _SudokuPageState extends State<SudokuPage> {
                 'A little space to focus.',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      fontSize: textSize,
+                      fontSize: textSize * 0.8,
                     ),
               ),
             ],
@@ -500,7 +500,7 @@ class _SudokuPageState extends State<SudokuPage> {
           onPressed: _showScoreboard,
           tooltip: 'Scoreboard',
           style: IconButton.styleFrom(
-            minimumSize: Size.square(textSize * 8 / 3),
+            minimumSize: Size.square(textSize * 7 / 3),
             padding: EdgeInsets.all(textSize / 2),
           ),
           icon: Icon(Icons.emoji_events_outlined, size: textSize),
@@ -515,7 +515,7 @@ class _SudokuPageState extends State<SudokuPage> {
             style: TextStyle(fontSize: textSize),
           ),
           style: FilledButton.styleFrom(
-            minimumSize: Size(0, textSize * 8 / 3),
+            minimumSize: Size(0, textSize * 7 / 3),
             padding: EdgeInsets.symmetric(horizontal: textSize),
           ),
         ),

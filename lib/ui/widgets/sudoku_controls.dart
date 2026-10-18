@@ -67,6 +67,7 @@ class SudokuActionBar extends StatelessWidget {
   final double scaleFactor;
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final textStyle = TextStyle(fontSize: 15 * sqrt(scaleFactor));
     return Row(
       children: [
@@ -100,6 +101,10 @@ class SudokuActionBar extends StatelessWidget {
               style: textStyle,
             ),
             style: OutlinedButton.styleFrom(
+              backgroundColor:
+                  game.notesEnabled ? colors.primaryContainer : null,
+              foregroundColor:
+                  game.notesEnabled ? colors.onPrimaryContainer : null,
               minimumSize: Size.fromHeight(48 * scaleFactor),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14 * scaleFactor),
@@ -115,6 +120,10 @@ class SudokuActionBar extends StatelessWidget {
             icon: Icon(Icons.backspace_outlined, size: 15 * scaleFactor),
             label: Text('Erase', style: textStyle),
             style: OutlinedButton.styleFrom(
+              backgroundColor:
+                  game.selectedNumber == 0 ? colors.primaryContainer : null,
+              foregroundColor:
+                  game.selectedNumber == 0 ? colors.onPrimaryContainer : null,
               minimumSize: Size.fromHeight(48 * scaleFactor),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14 * scaleFactor),
