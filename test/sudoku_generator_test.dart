@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sudoku_flutter/game/sudoku_generator.dart';
-import 'package:sudoku_flutter/game/sudoku_logic_solver.dart';
+import 'package:sudoku_flutter/game/sudoku_logical_generator.dart';
 
 const _specialSeedDiagonals = <int, List<int>>{
   314159265: [3, 1, 4, 1, 5, 9, 2, 6, 5],
@@ -11,6 +11,17 @@ const _specialSeedDiagonals = <int, List<int>>{
   915965594: [9, 1, 5, 9, 6, 5, 5, 9, 4],
 };
 
+final _replaySeeds = <int>[
+  ...List<int>.generate(100, (index) => index + 1),
+  271828182, // e: not a diagonal pattern because it repeats digits.
+  314159265, // pi
+  628318531, // tau
+  123456789, // counting
+  987654321, // reverse counting
+  241421356,
+  915965594,
+];
+
 void main() {
   late SudokuGenerator puzzle;
   late SudokuGenerator extremePuzzle;
@@ -18,7 +29,7 @@ void main() {
 
   setUpAll(() async {
     puzzle = await SudokuGenerator.create(
-        seed: 123456, difficulty: SudokuDifficulty.easy);
+        seed: 123456,);
     extremePuzzle = await SudokuGenerator.create(
       seed: 654321,
       difficulty: SudokuDifficulty.extreme,
@@ -53,7 +64,6 @@ void main() {
   test('same seed and difficulty reproduce the puzzle and solution', () async {
     final repeated = await SudokuGenerator.create(
       seed: 123456,
-      difficulty: SudokuDifficulty.easy,
     );
 
     expect(repeated.board, puzzle.board);
@@ -69,6 +79,24 @@ void main() {
 
     expect(replay.board, randomPuzzle.board);
     expect(replay.solution, randomPuzzle.solution);
+  });
+
+  test('small and named seeds deterministically replay puzzles', () async {
+    for (final seed in _replaySeeds) {
+      final original = await SudokuGenerator.create(seed: seed);
+      final replay = await SudokuGenerator.create(seed: seed);
+
+      expect(
+        replay.board,
+        original.board,
+        reason: 'Seed $seed should reproduce its puzzle.',
+      );
+      expect(
+        replay.solution,
+        original.solution,
+        reason: 'Seed $seed should reproduce its solution.',
+      );
+    }
   });
 
   test('seeds 76 and 100 keep a custom clue in every row and column', () async {
@@ -141,10 +169,10 @@ void main() {
   });
 
   test(
-      'almost-impossible (removed, logic in extreme) puzzle is unique and solvable without guessing',
+      'extreme puzzle is unique and solvable without guessing',
       () {
     expect(_countSolutions(almostImpossiblePuzzle.board), 1);
-    expect(SudokuLogicSolver().canSolve(almostImpossiblePuzzle.board), isTrue);
+    expect(SudokuLogicalGenerator().canSolve(almostImpossiblePuzzle.board), isTrue);
 
     final clueCount = almostImpossiblePuzzle.board
         .expand((row) => row)
@@ -154,7 +182,7 @@ void main() {
   });
 
   test(
-      'seed 79505584 produces a unique almost-impossible (removed, logic in extreme) puzzle',
+      'seed 79505584 produces a unique extreme puzzle',
       () async {
     final seededPuzzle = await SudokuGenerator.create(
       seed: 79505584,
@@ -162,13 +190,13 @@ void main() {
     );
 
     expect(_countSolutions(seededPuzzle.board), 1);
-    expect(SudokuLogicSolver().canSolve(seededPuzzle.board), isTrue);
+    expect(SudokuLogicalGenerator().canSolve(seededPuzzle.board), isTrue);
   });
 
   test(
-      'almost-impossible (removed, logic in extreme) puzzle cannot lose another clue and stay valid',
+      'extreme puzzle cannot lose another clue and stay valid',
       () {
-    final solver = SudokuLogicSolver();
+    final logicalGenerator = SudokuLogicalGenerator();
     for (var row = 0; row < 9; row++) {
       for (var column = 0; column < 9; column++) {
         if (almostImpossiblePuzzle.board[row][column] == 0) continue;
@@ -177,9 +205,9 @@ void main() {
             SudokuGenerator.cloneBoard(almostImpossiblePuzzle.board);
         withClueRemoved[row][column] = 0;
         final stillUnique = _countSolutions(withClueRemoved) == 1;
-        final stillSolvableWithoutGuessing = solver.canSolve(withClueRemoved);
+        final stillLogicallySolvable = logicalGenerator.canSolve(withClueRemoved);
         expect(
-          stillUnique && stillSolvableWithoutGuessing,
+          stillUnique && stillLogicallySolvable,
           isFalse,
           reason: 'Removing clue at row ${row + 1}, column ${column + 1} must '
               'break uniqueness or require a technique this tier does not use.',
@@ -226,8 +254,9 @@ bool _isValidPartialBoard(Board board) {
         // with that cell temporarily cleared.
         final withoutCell = SudokuGenerator.cloneBoard(board);
         withoutCell[row][column] = 0;
-        if (!SudokuGenerator.isValidCell(withoutCell, row, column, value))
+        if (!SudokuGenerator.isValidCell(withoutCell, row, column, value)) {
           return false;
+        }
       }
     }
   }

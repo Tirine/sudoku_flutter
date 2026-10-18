@@ -1,7 +1,7 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sudoku_flutter/game/sudoku_generator.dart';
 import 'package:sudoku_flutter/game/sudoku_game_controller.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
 
 void main() {
   late SudokuGenerator game;
@@ -9,7 +9,7 @@ void main() {
 
   setUp(() {
     game =
-        SudokuGenerator(difficulty: SudokuDifficulty.easy, initialise: false);
+        SudokuGenerator(initialise: false);
     controller = SudokuGameController(
       initialGame: game,
       startTimer: false,
@@ -239,7 +239,7 @@ void main() {
     }
     game.board[0][0] = 9;
     expect(controller.verifyAndComplete(), isFalse,
-        reason: 'filled board has an incorrect value');
+        reason: 'filled board has an incorrect value',);
 
     game.board[0][0] = solved[0][0];
     expect(controller.verifyAndComplete(), isTrue);
@@ -263,7 +263,7 @@ void main() {
     invalidProgress.add({...valid, 'elapsedSeconds': -1});
     invalidProgress.add({
       ...valid,
-      'undoHistory': [<String, Object>{}]
+      'undoHistory': [<String, Object>{}],
     });
 
     for (final progress in invalidProgress) {

@@ -90,6 +90,7 @@ void main() {
 
     final baselineFile = File(_baselinePath);
     expect(
+      // ignore: avoid_slow_async_io
       await baselineFile.exists(),
       isTrue,
       reason: 'Create a baseline with UPDATE_GENERATOR_BASELINE=true first.',

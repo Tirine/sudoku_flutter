@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sudoku_flutter/storage/last_game_store.dart';
-import 'package:sudoku_flutter/ui/sudoku_app.dart';
-import 'package:sudoku_flutter/storage/scoreboard.dart';
-import 'package:sudoku_flutter/game/sudoku_generator.dart';
 import 'package:sudoku_flutter/game/sudoku_game_controller.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
 import 'package:sudoku_flutter/game/sudoku_puzzle_pool.dart';
+import 'package:sudoku_flutter/storage/last_game_store.dart';
+import 'package:sudoku_flutter/storage/scoreboard.dart';
+import 'package:sudoku_flutter/ui/sudoku_app.dart';
 
 void main() {
   testWidgets('blocks new puzzle requests while a puzzle is loading',
@@ -61,7 +61,7 @@ void main() {
 
     puzzleCompleter.complete(
       SudokuGenerator(
-          seed: 1, difficulty: SudokuDifficulty.easy, initialise: false),
+          seed: 1, initialise: false,),
     );
     await tester.pump();
     await tester.pump();
@@ -185,7 +185,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(
-        find.textContaining('Could not load the scoreboard'), findsOneWidget);
+        find.textContaining('Could not load the scoreboard'), findsOneWidget,);
     expect(tester.takeException(), isNull);
   });
 
@@ -216,7 +216,6 @@ void main() {
     await _pumpGame(
       tester,
       resetPreferences: false,
-      awaitingResumeChoice: false,
     );
 
     await tester.pump();
@@ -276,11 +275,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('notes-toggle')));
     await tester.pump();
-    expect(
-        tester
-            .widget<FilterChip>(find.byKey(const ValueKey('notes-toggle')))
-            .selected,
-        isTrue);
+    expect(find.text('Notes on'), findsOneWidget);
 
     final emptyCell = find
         .bySemanticsLabel(
@@ -342,9 +337,9 @@ void main() {
     expect(find.text('Best times'), findsOneWidget);
     final dialog = find.byType(AlertDialog);
     expect(find.descendant(of: dialog, matching: find.text('Easy')),
-        findsOneWidget);
+        findsOneWidget,);
     expect(find.descendant(of: dialog, matching: find.text('Hard')),
-        findsOneWidget);
+        findsOneWidget,);
     expect(find.text('00:31'), findsOneWidget);
     expect(find.text('00:52'), findsOneWidget);
     expect(find.text('01:24'), findsOneWidget);
@@ -402,7 +397,6 @@ void main() {
     final game = (await tester.runAsync<SudokuGenerator>(
       () => SudokuGenerator.create(
         seed: 123456,
-        difficulty: SudokuDifficulty.easy,
       ),
     ))!;
     final controller = SudokuGameController(
@@ -585,7 +579,7 @@ void main() {
 
     expect(find.text('Puzzle complete'), findsOneWidget);
     expect(find.textContaining('That is #1 on the Easy scoreboard!'),
-        findsOneWidget);
+        findsOneWidget,);
     expect((await ScoreboardStore().loadScores())[SudokuDifficulty.easy], [0]);
     expect(await LastGameStore().load(), isNull);
     expect(
@@ -598,7 +592,7 @@ void main() {
         tester
             .widget<OutlinedButton>(find.byKey(const ValueKey('erase')))
             .onPressed,
-        isNull);
+        isNull,);
   });
 
   testWidgets('fits the board and controls on a small phone viewport',

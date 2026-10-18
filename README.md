@@ -28,7 +28,7 @@ The levels are intended to reflect the solving effort a puzzle takes:
 - **Easy:** mostly direct placements, such as cells with only one possible number.
 - **Medium:** a mix of direct placements and scanning rows, columns, and boxes to find numbers that have only one possible location.
 - **Hard:** requires more sustained candidate tracking and common patterns such as pairs or pointing and claiming.
-- **Extreme:** may require advanced patterns or longer chains of deductions before a number can be placed, using deterministic techniques supported by a logical solver.
+- **Extreme:** may require advanced patterns or longer chains of deductions before a number can be placed, using deterministic techniques supported by a logical generator.
 
 Puzzles must all have a single solution and be solvable without guessing.
 

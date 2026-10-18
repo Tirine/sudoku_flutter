@@ -1,19 +1,23 @@
 import 'package:sudoku_flutter/game/sudoku_generator.dart';
 
-/// Solves puzzles using deterministic candidate techniques only.
+/// Filters generated puzzles using deterministic candidate techniques.
 ///
-/// This deliberately does not search or backtrack. A false result means the
-/// puzzle needs a technique this solver does not implement (or is invalid).
-class SudokuLogicSolver {
+/// This deliberately does not search or backtrack. [canSolve] returns false
+/// when the puzzle needs a technique this class does not implement (or is
+/// invalid), so the generator can keep the clue that was tentatively removed.
+class SudokuLogicalGenerator {
   bool canSolve(Board source) {
     if (source.length != 9 || source.any((row) => row.length != 9)) {
       return false;
     }
+    if (!_isValidBoard(source)) return false;
+
     final board = SudokuGenerator.cloneBoard(source);
+    final candidates = _createCandidates();
+    final originalCandidates = _createCandidates();
 
     while (true) {
-      var candidates = _candidatesFor(board);
-      if (candidates == null) return false;
+      if (!_candidatesFor(board, candidates)) return false;
 
       var placed = _placeSingle(board, candidates);
       if (placed) continue;
@@ -21,9 +25,17 @@ class SudokuLogicSolver {
       while (true) {
         if (!_hasCandidates(candidates)) return true;
 
-        if (_applyLockedCandidates(candidates) ||
-            _applyNakedPairs(candidates) ||
-            _applyXWing(candidates)) {
+        _copyCandidatesInto(candidates, originalCandidates);
+        var changed = _applyLockedCandidates(candidates, originalCandidates);
+        if (!changed) {
+          _copyCandidatesInto(candidates, originalCandidates);
+          changed = _applyNakedPairs(candidates, originalCandidates);
+        }
+        if (!changed) {
+          _copyCandidatesInto(candidates, originalCandidates);
+          changed = _applyXWing(candidates, originalCandidates);
+        }
+        if (changed) {
           if (!_candidatesAreValid(board, candidates)) return false;
           placed = _placeSingle(board, candidates);
           if (placed) break;
@@ -35,33 +47,54 @@ class SudokuLogicSolver {
     }
   }
 
-  List<List<Set<int>>>? _candidatesFor(Board board) {
-    final candidates = List.generate(
-      9,
-      (_) => List.generate(9, (_) => <int>{}),
-    );
+  List<List<Set<int>>> _createCandidates() => List.generate(
+        9,
+        (_) => List.generate(9, (_) => <int>{}),
+      );
+
+  bool _isValidBoard(Board board) {
+    final rows = List<int>.filled(9, 0);
+    final columns = List<int>.filled(9, 0);
+    final boxes = List<int>.filled(9, 0);
 
     for (var row = 0; row < 9; row++) {
       for (var column = 0; column < 9; column++) {
         final value = board[row][column];
-        if (value < 0 || value > 9) return null;
+        if (value < 0 || value > 9) return false;
+        if (value == 0) continue;
+
+        final bit = 1 << value;
+        final box = (row ~/ 3) * 3 + column ~/ 3;
+        if ((rows[row] & bit) != 0 ||
+            (columns[column] & bit) != 0 ||
+            (boxes[box] & bit) != 0) {
+          return false;
+        }
+        rows[row] |= bit;
+        columns[column] |= bit;
+        boxes[box] |= bit;
+      }
+    }
+    return true;
+  }
+
+  bool _candidatesFor(Board board, List<List<Set<int>>> candidates) {
+    for (var row = 0; row < 9; row++) {
+      for (var column = 0; column < 9; column++) {
+        final value = board[row][column];
+        final cellCandidates = candidates[row][column];
+        cellCandidates.clear();
         if (value == 0) {
           for (var digit = 1; digit <= 9; digit++) {
             if (SudokuGenerator.isValidCell(board, row, column, digit)) {
-              candidates[row][column].add(digit);
+              cellCandidates.add(digit);
             }
           }
-          if (candidates[row][column].isEmpty) return null;
-        } else {
-          final withoutCell = SudokuGenerator.cloneBoard(board);
-          withoutCell[row][column] = 0;
-          if (!SudokuGenerator.isValidCell(withoutCell, row, column, value)) {
-            return null;
-          }
+          if (cellCandidates.isEmpty) return false;
         }
       }
     }
-    return candidates;
+    return true;
   }
 
   bool _placeSingle(Board board, List<List<Set<int>>> candidates) {
@@ -79,7 +112,7 @@ class SudokuLogicSolver {
         final locations = unit
             .where((cell) =>
                 board[cell.$1][cell.$2] == 0 &&
-                candidates[cell.$1][cell.$2].contains(digit))
+                candidates[cell.$1][cell.$2].contains(digit),)
             .toList();
         if (locations.length == 1) {
           final (row, column) = locations.single;
@@ -91,9 +124,11 @@ class SudokuLogicSolver {
     return false;
   }
 
-  bool _applyLockedCandidates(List<List<Set<int>>> candidates) {
+  bool _applyLockedCandidates(
+    List<List<Set<int>>> candidates,
+    List<List<Set<int>>> original,
+  ) {
     var changed = false;
-    final original = _copyCandidates(candidates);
 
     // Pointing: if a box's candidates for a digit share a row or column,
     // remove that digit from the rest of that row or column.
@@ -179,9 +214,11 @@ class SudokuLogicSolver {
     return changed;
   }
 
-  bool _applyNakedPairs(List<List<Set<int>>> candidates) {
+  bool _applyNakedPairs(
+    List<List<Set<int>>> candidates,
+    List<List<Set<int>>> original,
+  ) {
     var changed = false;
-    final original = _copyCandidates(candidates);
     for (final unit in _units()) {
       final pairs = <String, List<(int, int)>>{};
       for (final (row, column) in unit) {
@@ -206,9 +243,11 @@ class SudokuLogicSolver {
     return changed;
   }
 
-  bool _applyXWing(List<List<Set<int>>> candidates) {
+  bool _applyXWing(
+    List<List<Set<int>>> candidates,
+    List<List<Set<int>>> original,
+  ) {
     var changed = false;
-    final original = _copyCandidates(candidates);
     for (var digit = 1; digit <= 9; digit++) {
       final rowsByColumns = <String, List<int>>{};
       for (var row = 0; row < 9; row++) {
@@ -280,10 +319,18 @@ class SudokuLogicSolver {
     return true;
   }
 
-  List<List<Set<int>>> _copyCandidates(List<List<Set<int>>> candidates) =>
-      candidates
-          .map((row) => row.map((cell) => Set<int>.from(cell)).toList())
-          .toList();
+  void _copyCandidatesInto(
+    List<List<Set<int>>> source,
+    List<List<Set<int>>> destination,
+  ) {
+    for (var row = 0; row < 9; row++) {
+      for (var column = 0; column < 9; column++) {
+        destination[row][column]
+          ..clear()
+          ..addAll(source[row][column]);
+      }
+    }
+  }
 
   bool _hasCandidates(List<List<Set<int>>> candidates) =>
       candidates.any((row) => row.any((cell) => cell.isNotEmpty));
@@ -299,7 +346,7 @@ class SudokuLogicSolver {
             (row, 5),
             (row, 6),
             (row, 7),
-            (row, 8)
+            (row, 8),
           ],
         for (var column = 0; column < 9; column++)
           [
@@ -311,7 +358,7 @@ class SudokuLogicSolver {
             (5, column),
             (6, column),
             (7, column),
-            (8, column)
+            (8, column),
           ],
         for (var boxRow = 0; boxRow < 3; boxRow++)
           for (var boxColumn = 0; boxColumn < 3; boxColumn++)

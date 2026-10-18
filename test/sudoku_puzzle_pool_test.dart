@@ -91,7 +91,6 @@ void main() {
     var active = 0;
     var maxActive = 0;
     final pool = SudokuPuzzlePool(
-      preloadCount: 3,
       maxConcurrentGenerations: 2,
       create: (difficulty, s) {
         active++;
@@ -117,7 +116,7 @@ void main() {
       final release = releases[index];
       expect(release.isCompleted, isFalse);
       release.complete(SudokuGenerator(
-          difficulty: SudokuDifficulty.easy, initialise: false));
+          initialise: false,),);
       await Future<void>.delayed(Duration.zero);
     }
 

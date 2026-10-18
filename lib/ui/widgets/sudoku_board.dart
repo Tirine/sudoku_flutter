@@ -162,9 +162,9 @@ class _SudokuGridPainter extends CustomPainter {
       final position = size.width * line / 9;
       final currentPaint = line % 3 == 0 ? thickPaint : paint;
       canvas.drawLine(
-          Offset(position, 0), Offset(position, size.height), currentPaint);
+          Offset(position, 0), Offset(position, size.height), currentPaint,);
       canvas.drawLine(
-          Offset(0, position), Offset(size.width, position), currentPaint);
+          Offset(0, position), Offset(size.width, position), currentPaint,);
     }
   }
 

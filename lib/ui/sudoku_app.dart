@@ -14,7 +14,6 @@ class SudokuApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Sudoku',
-      themeMode: ThemeMode.system,
       theme: ThemeData(
         brightness: Brightness.light,
         colorScheme: ColorScheme.fromSeed(

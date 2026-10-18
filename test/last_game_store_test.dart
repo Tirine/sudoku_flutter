@@ -15,16 +15,16 @@ void main() {
         'seed': 314159265,
         'difficulty': 'Hard',
         'board': [1, 2, 0],
-        'notes': [
+        'notes': <List<int>>[
           [],
           [3, 4],
-          []
+          [],
         ],
         'elapsedSeconds': elapsedSeconds,
         'undoHistory': [
           {
             'board': [1, 0, 0],
-            'notes': [[], [], []],
+            'notes': <List<int>>[[], [], []],
           },
         ],
       };
@@ -43,7 +43,7 @@ void main() {
 
   test('elapsed checkpoint takes precedence over older saved progress',
       () async {
-    await store.save(progress(elapsedSeconds: 42));
+    await store.save(progress());
     await store.saveElapsedSeconds(47);
 
     final loaded = await store.load();

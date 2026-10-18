@@ -41,7 +41,7 @@ void main() {
         final nextCase = parallelCases.removeAt(0);
         expect(nextCase.difficulty, difficulty);
         return SudokuGenerator.create(
-            seed: nextCase.seed, difficulty: difficulty);
+            seed: nextCase.seed, difficulty: difficulty,);
       },
     );
     final parallel = await Future.wait(

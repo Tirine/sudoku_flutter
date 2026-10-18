@@ -45,6 +45,38 @@ report first, then run:
 The cases cover two fixed seeds at each difficulty, including special seeds.
 Keep the seed set stable when comparing performance across generator changes.
 
+## Solver stage profile
+
+Run the stage profile with:
+
+```sh
+./flutter test test/generator_solver_profile_test.dart
+```
+
+It profiles the same eight fixed seeds in-process and records total generation
+time, uniqueness-check count and time, logical-solve count and time, and the
+generated boards in [`results/solver_profile_latest.json`](./results/solver_profile_latest.json).
+The stage timers are opt-in diagnostics and are inactive during normal puzzle
+generation. Results identify where time is spent for these seeds; timings vary
+by host and are not pass/fail thresholds.
+
+## Cell selection strategies
+
+Run the fixed-puzzle cell-selection comparison with:
+
+```sh
+./flutter test test/solver_cell_selection_benchmark_test.dart
+```
+
+It solves the same eight stored puzzles with row-major and fewest-candidate
+selection, verifies both produce the stored solution, and records median time,
+recursive search nodes, and candidate assignments in
+[`results/solver_cell_selection_latest.json`](./results/solver_cell_selection_latest.json).
+The fewest-candidate strategy explored far fewer nodes, but its per-node scan
+made it slower on seven of the eight cases. It was faster on the hardest
+Extreme seed. Row-major remains the default to keep generated seed output
+stable and avoid paying the candidate scan on easier cases.
+
 ## Parallel generation
 
 Run the sequential-versus-parallel benchmark with:

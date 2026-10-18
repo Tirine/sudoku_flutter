@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:isolate';
 import 'dart:math';
 
-import 'package:sudoku_flutter/game/sudoku_logic_solver.dart';
+import 'package:sudoku_flutter/game/sudoku_logical_generator.dart';
 import 'package:sudoku_flutter/utils.dart';
 
 typedef Board = List<List<int>>;
 
 enum SudokuDifficulty { easy, medium, hard, extreme }
+
+enum SudokuCellSelection { rowMajor, fewestCandidates }
 
 class SudokuGenerator {
   static const _noValue = 0;
@@ -30,35 +33,46 @@ class SudokuGenerator {
   late int Function() _random;
   Board _sudoku = createEmpty();
   Board _solution = createEmpty();
+  final Board _uniquenessBoard = createEmpty();
+  final SudokuGenerationProfile? profile;
+  final SudokuCellSelection _cellSelection;
 
   static int _returnZero() => 0;
 
-  static Future<SudokuGenerator> create(
-      {int? seed, difficulty = SudokuDifficulty.easy}) async {
-    var obj = await Isolate.run(() async {
-      SudokuGenerator created = SudokuGenerator(
-          seed: seed ?? -1, difficulty: difficulty, initialise: false);
+  static Future<SudokuGenerator> create({
+    int? seed,
+    SudokuDifficulty difficulty = SudokuDifficulty.easy,
+  }) async {
+    final obj = await Isolate.run(() async {
+      final SudokuGenerator created = SudokuGenerator(
+        seed: seed ?? -1,
+        difficulty: difficulty,
+        initialise: false,
+      );
       await created.init();
       return {
         'seed': created.seed,
         'initialised': created._initialised,
         'solution': created.solution,
-        'sudoku': created._sudoku
+        'sudoku': created._sudoku,
       };
     });
-    var returnVal = SudokuGenerator._(
-        obj['seed'] as int,
-        difficulty,
-        obj['initialised'] as bool,
-        obj['solution'] as Board,
-        obj['sudoku'] as Board);
+    final returnVal = SudokuGenerator._(
+      obj['seed'] as int,
+      difficulty,
+      obj['initialised'] as bool,
+      obj['solution'] as Board,
+      obj['sudoku'] as Board,
+    );
     printSudoku(returnVal._solution);
     return returnVal;
   }
 
   static Board createEmpty() => Board.generate(
-      9, (index) => List<int>.generate(9, (index) => 0, growable: false),
-      growable: false);
+        9,
+        (index) => List<int>.generate(9, (index) => 0, growable: false),
+        growable: false,
+      );
 
   static void _printLine() {
     printDebug('-+ -+ -+ -+ -+ -+ -+ -+ -+ ');
@@ -98,37 +112,50 @@ class SudokuGenerator {
   }
 
   static Board cloneBoard(Board obj) {
-    Board board = createEmpty();
-    for (var i = 0; i < obj.length; i++) {
-      board[i] = List<int>.from(obj[i]);
-    }
-    return board;
+    return obj.map(List<int>.from).toList(growable: false);
   }
 
-  SudokuGenerator(
-      {int seed = -1,
-      SudokuDifficulty difficulty = SudokuDifficulty.easy,
-      initialise = true})
-      : _difficulty = difficulty,
-        _seed = seed {
+  static void _copyBoardInto(Board source, Board destination) {
+    for (var row = 0; row < source.length; row++) {
+      for (var column = 0; column < source[row].length; column++) {
+        destination[row][column] = source[row][column];
+      }
+    }
+  }
+
+  SudokuGenerator({
+    int seed = -1,
+    SudokuDifficulty difficulty = SudokuDifficulty.easy,
+    SudokuCellSelection cellSelection = SudokuCellSelection.rowMajor,
+    this.profile,
+    bool initialise = true,
+  })  : _difficulty = difficulty,
+        _seed = seed,
+        _cellSelection = cellSelection {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
 
     _random = mulberry32(_offsetSeed());
     if (initialise) {
-      init();
+      unawaited(init());
     }
   }
-  SudokuGenerator._(this._seed, this._difficulty, this._initialised,
-      this._solution, this._sudoku) {
+  SudokuGenerator._(
+    this._seed,
+    this._difficulty,
+    this._initialised,
+    this._solution,
+    this._sudoku,
+  )   : profile = null,
+        _cellSelection = SudokuCellSelection.rowMajor {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
     _random = mulberry32(_offsetSeed());
   }
 
-  int Function() mulberry32(a) {
+  int Function() mulberry32(int a) {
     int t;
     return () {
       t = a += 0x6D2B79F5;
@@ -144,16 +171,17 @@ class SudokuGenerator {
   }
 
   Future<void> init() async {
+    profile?.startGeneration();
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
     _random = mulberry32(_offsetSeed());
     _initialised = true;
 
-    var sudoku = _createSeedBoard();
+    final sudoku = _createSeedBoard();
     final seedBoard = cloneBoard(sudoku);
     while (!(await solver(sudoku, offset: _rand))) {
-      sudoku = cloneBoard(seedBoard);
+      _copyBoardInto(seedBoard, sudoku);
     }
     final solution = cloneBoard(sudoku);
     _sudoku = await _removeClues(
@@ -162,6 +190,7 @@ class SudokuGenerator {
       minFilled: _minimumClueCount(),
     );
     _solution = solution;
+    profile?.finishGeneration();
   }
 
   Board _createSeedBoard() {
@@ -217,7 +246,7 @@ class SudokuGenerator {
         return _minimumClues + 24;
       case SudokuDifficulty.hard:
         return _minimumClues + 16;
-      default:
+      case SudokuDifficulty.extreme:
         return _minimumClues;
     }
   }
@@ -240,7 +269,7 @@ class SudokuGenerator {
       } catch (e) {
         maxDepth *= 2;
         printDebug('Retry...');
-        sudoku = cloneBoard(solution);
+        _copyBoardInto(solution, sudoku);
         await Future<void>.delayed(Duration.zero);
       }
     }
@@ -258,7 +287,7 @@ class SudokuGenerator {
     return (_random() % 9) + 1;
   }
 
-  bool verifyCell(row, column) {
+  bool verifyCell(int row, int column) {
     return _sudoku[row][column] == _solution[row][column];
   }
 
@@ -297,7 +326,8 @@ class SudokuGenerator {
     }
 
     var filled = _boardSize * _boardSize;
-    final logicalSolver = requireLogicalSolve ? SudokuLogicSolver() : null;
+    final logicalGenerator =
+        requireLogicalSolve ? SudokuLogicalGenerator() : null;
 
     for (int i = 0; i <= _boardSize; i++) {
       for (int j = 0; j <= _boardSize; j++) {
@@ -305,7 +335,7 @@ class SudokuGenerator {
           board,
           rowI,
           colI,
-          logicalSolver: logicalSolver,
+          logicalGenerator: logicalGenerator,
           maxDepth: maxDepth,
         )) {
           filled--;
@@ -328,25 +358,34 @@ class SudokuGenerator {
     Board board,
     int row,
     int column, {
-    required SudokuLogicSolver? logicalSolver,
+    required SudokuLogicalGenerator? logicalGenerator,
     required int maxDepth,
   }) {
-    if (board[row][column] == _noValue ||
-        !_isUniqueCell(
-          board,
-          row,
-          column,
-          offset: _rand,
-          maxDepth: maxDepth,
-        )) {
+    if (board[row][column] == _noValue) return false;
+
+    profile?.startUniquenessCheck();
+    final isUnique = _isUniqueCell(
+      board,
+      row,
+      column,
+      offset: _rand,
+      maxDepth: maxDepth,
+    );
+    profile?.finishUniquenessCheck();
+    if (!isUnique) {
       return false;
     }
 
     final clue = board[row][column];
     board[row][column] = _noValue;
-    if (logicalSolver != null && !logicalSolver.canSolve(board)) {
-      board[row][column] = clue;
-      return false;
+    if (logicalGenerator != null) {
+      profile?.startLogicalSolve();
+      final canSolve = logicalGenerator.canSolve(board);
+      profile?.finishLogicalSolve();
+      if (!canSolve) {
+        board[row][column] = clue;
+        return false;
+      }
     }
     return true;
   }
@@ -356,7 +395,12 @@ class SudokuGenerator {
     int Function() offset = _returnZero,
     int maxDepth = 0,
   }) async {
-    return _solveBoard(data, offset, maxDepth, _SolverProgress());
+    return _solveBoard(
+      data,
+      offset,
+      maxDepth,
+      _SolverProgress(profile: profile),
+    );
   }
 
   bool _solveBoard(
@@ -368,24 +412,64 @@ class SudokuGenerator {
     if (maxDepth > 1000 && progress.visitedCandidates > maxDepth) {
       throw 'Went too deep';
     }
+    final profile = progress.profile;
+    if (profile != null) profile.searchNodes++;
 
-    for (int row = 0; row < _boardSize; row++) {
-      for (int column = 0; column < _boardSize; column++) {
-        if (board[row][column] == _noValue) {
-          return _trySolveCell(
-            board,
-            row,
-            column,
-            offset(),
-            offset,
-            maxDepth,
-            progress,
-          );
+    if (_cellSelection == SudokuCellSelection.rowMajor) {
+      for (var row = 0; row < _boardSize; row++) {
+        for (var column = 0; column < _boardSize; column++) {
+          if (board[row][column] == _noValue) {
+            return _trySolveCell(
+              board,
+              row,
+              column,
+              offset(),
+              offset,
+              maxDepth,
+              progress,
+            );
+          }
+        }
+      }
+      return true;
+    }
+
+    final nextCell = _fewestCandidateCell(board);
+    if (nextCell != null) {
+      return _trySolveCell(
+        board,
+        nextCell.$1,
+        nextCell.$2,
+        offset(),
+        offset,
+        maxDepth,
+        progress,
+      );
+    }
+    return true;
+  }
+
+  (int, int)? _fewestCandidateCell(Board board) {
+    var selectedRow = -1;
+    var selectedColumn = -1;
+    var fewestCandidates = _boardSize + 1;
+    for (var row = 0; row < _boardSize; row++) {
+      for (var column = 0; column < _boardSize; column++) {
+        if (board[row][column] != _noValue) continue;
+
+        var candidateCount = 0;
+        for (var value = 1; value <= _boardSize; value++) {
+          if (isValidCell(board, row, column, value)) candidateCount++;
+        }
+        if (candidateCount < fewestCandidates) {
+          fewestCandidates = candidateCount;
+          selectedRow = row;
+          selectedColumn = column;
+          if (candidateCount == 0) return (row, column);
         }
       }
     }
-
-    return true;
+    return selectedRow == -1 ? null : (selectedRow, selectedColumn);
   }
 
   bool _trySolveCell(
@@ -403,6 +487,8 @@ class SudokuGenerator {
 
       board[row][column] = value;
       progress.visitedCandidates++;
+      final profile = progress.profile;
+      if (profile != null) profile.candidateAssignments++;
       if (_solveBoard(board, offset, maxDepth, progress)) return true;
       board[row][column] = _noValue;
     }
@@ -426,7 +512,9 @@ class SudokuGenerator {
     required int maxDepth,
   }) {
     final originalValue = board[row][column];
-    final candidateBoard = cloneBoard(board);
+    final candidateBoard = _uniquenessBoard;
+    _copyBoardInto(board, candidateBoard);
+    final progress = _SolverProgress(profile: profile);
 
     for (int value = 1; value <= _boardSize; value++) {
       if (value == originalValue ||
@@ -435,11 +523,12 @@ class SudokuGenerator {
       }
 
       candidateBoard[row][column] = value;
+      progress.visitedCandidates = 0;
       if (_solveBoard(
         candidateBoard,
         offset,
         maxDepth,
-        _SolverProgress(),
+        progress,
       )) {
         return false;
       }
@@ -450,5 +539,55 @@ class SudokuGenerator {
 }
 
 class _SolverProgress {
+  _SolverProgress({this.profile});
+
+  final SudokuGenerationProfile? profile;
   int visitedCandidates = 0;
+}
+
+class SudokuGenerationProfile {
+  final Stopwatch _generationWatch = Stopwatch();
+  final Stopwatch _stageWatch = Stopwatch();
+
+  int generationMicroseconds = 0;
+  int uniquenessChecks = 0;
+  int uniquenessMicroseconds = 0;
+  int logicalSolveChecks = 0;
+  int logicalSolveMicroseconds = 0;
+  int searchNodes = 0;
+  int candidateAssignments = 0;
+
+  void startGeneration() => _generationWatch
+    ..reset()
+    ..start();
+
+  void finishGeneration() {
+    _generationWatch.stop();
+    generationMicroseconds += _generationWatch.elapsedMicroseconds;
+    _generationWatch.reset();
+  }
+
+  void startUniquenessCheck() {
+    uniquenessChecks++;
+    _stageWatch
+      ..reset()
+      ..start();
+  }
+
+  void finishUniquenessCheck() {
+    _stageWatch.stop();
+    uniquenessMicroseconds += _stageWatch.elapsedMicroseconds;
+  }
+
+  void startLogicalSolve() {
+    logicalSolveChecks++;
+    _stageWatch
+      ..reset()
+      ..start();
+  }
+
+  void finishLogicalSolve() {
+    _stageWatch.stop();
+    logicalSolveMicroseconds += _stageWatch.elapsedMicroseconds;
+  }
 }

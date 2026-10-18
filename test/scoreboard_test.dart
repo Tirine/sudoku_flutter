@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sudoku_flutter/storage/scoreboard.dart';
 import 'package:sudoku_flutter/game/sudoku_generator.dart';
+import 'package:sudoku_flutter/storage/scoreboard.dart';
 
 void main() {
   setUp(() {

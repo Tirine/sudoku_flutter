@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:sudoku_flutter/game/sudoku_game_controller.dart';
 
@@ -6,10 +8,12 @@ class SudokuNumberPad extends StatelessWidget {
     super.key,
     required this.game,
     required this.onNumberSelected,
+    required this.scaleFactor,
   });
 
   final SudokuGameController game;
   final ValueChanged<int> onNumberSelected;
+  final double scaleFactor;
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +35,7 @@ class SudokuNumberPad extends StatelessWidget {
                       number: number,
                       selected: selected,
                       onPressed: () => onNumberSelected(number),
+                      scaleFactor: scaleFactor,
                     ),
                   ),
                 );
@@ -51,6 +56,7 @@ class SudokuActionBar extends StatelessWidget {
     required this.onUndo,
     required this.onNotesChanged,
     required this.onErase,
+    required this.scaleFactor,
   });
 
   final SudokuGameController game;
@@ -58,37 +64,47 @@ class SudokuActionBar extends StatelessWidget {
   final VoidCallback onUndo;
   final ValueChanged<bool> onNotesChanged;
   final VoidCallback onErase;
-
+  final double scaleFactor;
   @override
   Widget build(BuildContext context) {
+    final textStyle = TextStyle(fontSize: 15 * sqrt(scaleFactor));
     return Row(
       children: [
         Expanded(
           child: OutlinedButton.icon(
             key: const ValueKey('undo'),
             onPressed: loading || !game.canUndo ? null : onUndo,
-            icon: const Icon(Icons.undo_rounded),
-            label: const Text('Undo'),
+            icon: Icon(Icons.undo_rounded, size: 15 * scaleFactor),
+            label: Text('Undo', style: textStyle),
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
+              minimumSize: Size.fromHeight(48 * scaleFactor),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(14 * scaleFactor),
               ),
             ),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: FilterChip(
+          child: OutlinedButton.icon(
             key: const ValueKey('notes-toggle'),
-            selected: game.notesEnabled,
-            onSelected: loading || game.isComplete ? null : onNotesChanged,
-            avatar: Icon(
+            onPressed: loading || game.isComplete
+                ? null
+                : () => onNotesChanged(!game.notesEnabled),
+            icon: Icon(
               game.notesEnabled ? Icons.edit_note : Icons.edit_note_outlined,
+              size: 15 * scaleFactor,
             ),
-            label: Text(game.notesEnabled ? 'Notes on' : 'Notes'),
-            showCheckmark: false,
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            label: Text(
+              game.notesEnabled ? 'Notes on' : 'Notes off',
+              style: textStyle,
+            ),
+            style: OutlinedButton.styleFrom(
+              minimumSize: Size.fromHeight(48 * scaleFactor),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14 * scaleFactor),
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -96,12 +112,12 @@ class SudokuActionBar extends StatelessWidget {
           child: OutlinedButton.icon(
             key: const ValueKey('erase'),
             onPressed: loading || game.isComplete ? null : onErase,
-            icon: const Icon(Icons.backspace_outlined),
-            label: const Text('Erase'),
+            icon: Icon(Icons.backspace_outlined, size: 15 * scaleFactor),
+            label: Text('Erase', style: textStyle),
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
+              minimumSize: Size.fromHeight(48 * scaleFactor),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(14 * scaleFactor),
               ),
             ),
           ),
@@ -116,27 +132,34 @@ class _DigitKey extends StatelessWidget {
     required this.number,
     required this.selected,
     required this.onPressed,
+    required this.scaleFactor,
   });
 
   final int number;
   final bool selected;
   final VoidCallback onPressed;
+  final double scaleFactor;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final textSize = 22 * sqrt(scaleFactor);
     return Semantics(
       label: 'Enter $number',
       button: true,
       child: Material(
         color: selected ? colors.primaryContainer : colors.surfaceContainer,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(
+          14 * scaleFactor,
+        ),
         child: InkWell(
           key: ValueKey('digit-$number'),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(
+            14 * scaleFactor,
+          ),
           onTap: onPressed,
           child: SizedBox(
-            height: 48,
+            height: 48 * scaleFactor,
             child: Center(
               child: Text(
                 '$number',
@@ -145,6 +168,7 @@ class _DigitKey extends StatelessWidget {
                           ? colors.onPrimaryContainer
                           : colors.onSurface,
                       fontWeight: FontWeight.w600,
+                      fontSize: textSize,
                     ),
               ),
             ),

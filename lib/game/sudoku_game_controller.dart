@@ -6,8 +6,10 @@ import 'package:sudoku_flutter/game/sudoku_generator.dart';
 /// Owns the mutable state for one Sudoku game, independently of its widgets.
 class SudokuGameController extends ChangeNotifier {
   static const maxUndoSteps = 3;
-  SudokuGameController(
-      {required SudokuGenerator initialGame, bool startTimer = true}) {
+  SudokuGameController({
+    required SudokuGenerator initialGame,
+    bool startTimer = true,
+  }) {
     load(initialGame, startTimer: startTimer);
   }
 
@@ -60,6 +62,8 @@ class SudokuGameController extends ChangeNotifier {
     if (_timerEnabled && !_isComplete && _timer == null) _startTimer();
   }
 
+  // Name toggle makes it clear.
+  // ignore: avoid_positional_boolean_parameters
   void toggleNotes(bool enabled) {
     if (_isComplete) return;
     notesEnabled = enabled;
@@ -179,7 +183,7 @@ class SudokuGameController extends ChangeNotifier {
   }
 
   static Board _copyBoard(List<List<int>> source) =>
-      source.map((row) => List<int>.from(row)).toList();
+      source.map(List<int>.from).toList();
 
   static void _copyBoardInto(Board source, Board target) {
     for (var row = 0; row < 9; row++) {
@@ -209,10 +213,12 @@ class SudokuGameController extends ChangeNotifier {
   static Board _parseBoard(dynamic value) {
     if (value is! List ||
         value.length != 9 ||
-        value.any((row) =>
-            row is! List ||
-            row.length != 9 ||
-            row.any((cell) => cell is! int || cell < 0 || cell > 9))) {
+        value.any(
+          (row) =>
+              row is! List ||
+              row.length != 9 ||
+              row.any((cell) => cell is! int || cell < 0 || cell > 9),
+        )) {
       throw const FormatException('Invalid saved Sudoku board.');
     }
     return value.map((row) => List<int>.from(row as List)).toList();
@@ -221,17 +227,23 @@ class SudokuGameController extends ChangeNotifier {
   static List<List<Set<int>>> _parseNotes(dynamic value) {
     if (value is! List ||
         value.length != 9 ||
-        value.any((row) =>
-            row is! List ||
-            row.length != 9 ||
-            row.any((cell) =>
-                cell is! List ||
-                cell.any((note) => note is! int || note < 1 || note > 9)))) {
+        value.any(
+          (row) =>
+              row is! List ||
+              row.length != 9 ||
+              row.any(
+                (cell) =>
+                    cell is! List ||
+                    cell.any((note) => note is! int || note < 1 || note > 9),
+              ),
+        )) {
       throw const FormatException('Invalid saved Sudoku notes.');
     }
     return value
-        .map((row) =>
-            (row as List).map((cell) => Set<int>.from(cell as List)).toList())
+        .map(
+          (row) =>
+              (row as List).map((cell) => Set<int>.from(cell as List)).toList(),
+        )
         .toList();
   }
 
@@ -251,9 +263,7 @@ class _GameProgress {
   factory _GameProgress.fromGame(Board board, List<List<Set<int>>> notes) =>
       _GameProgress(
         SudokuGameController._copyBoard(board),
-        notes
-            .map((row) => row.map((cell) => Set<int>.from(cell)).toList())
-            .toList(),
+        notes.map((row) => row.map(Set<int>.from).toList()).toList(),
       );
 
   factory _GameProgress.fromJson(dynamic json) {

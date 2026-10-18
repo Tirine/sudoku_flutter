@@ -5,7 +5,7 @@ import 'package:sudoku_flutter/game/sudoku_game_controller.dart';
 import 'package:sudoku_flutter/storage/last_game_store.dart';
 
 typedef SessionPersistenceError = void Function(
-    String message, Object error, Object? stackTrace);
+    String message, Object error, Object? stackTrace,);
 
 class SudokuSessionPersistence with WidgetsBindingObserver {
   SudokuSessionPersistence({
@@ -49,7 +49,7 @@ class SudokuSessionPersistence with WidgetsBindingObserver {
   }
 
   Future<Map<String, dynamic>?> loadProgress(
-      {bool rethrowInvalid = false}) async {
+      {bool rethrowInvalid = false,}) async {
     Map<String, dynamic>? progress;
     try {
       progress = await _store.load();

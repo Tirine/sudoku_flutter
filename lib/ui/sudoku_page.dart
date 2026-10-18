@@ -4,13 +4,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:loader_overlay/loader_overlay.dart';
-import 'package:sudoku_flutter/storage/scoreboard.dart';
-import 'package:sudoku_flutter/game/sudoku_generator.dart';
-import 'package:sudoku_flutter/ui/widgets/sudoku_board.dart';
-import 'package:sudoku_flutter/ui/widgets/sudoku_controls.dart';
 import 'package:sudoku_flutter/game/sudoku_game_controller.dart';
+import 'package:sudoku_flutter/game/sudoku_generator.dart';
 import 'package:sudoku_flutter/game/sudoku_puzzle_pool.dart';
 import 'package:sudoku_flutter/game/sudoku_session_persistence.dart';
+import 'package:sudoku_flutter/storage/scoreboard.dart';
+import 'package:sudoku_flutter/ui/widgets/sudoku_board.dart';
+import 'package:sudoku_flutter/ui/widgets/sudoku_controls.dart';
 import 'package:sudoku_flutter/utils.dart';
 
 class SudokuPage extends StatefulWidget {
@@ -26,8 +26,7 @@ class SudokuPage extends StatefulWidget {
 class _SudokuPageState extends State<SudokuPage> {
   final ScoreboardStore _scoreboardStore = ScoreboardStore();
   late final SudokuGameController _game = SudokuGameController(
-    initialGame:
-        SudokuGenerator(difficulty: SudokuDifficulty.easy, initialise: false),
+    initialGame: SudokuGenerator(initialise: false),
     startTimer: false,
   );
   late final SudokuPuzzlePool _puzzlePool = widget.puzzlePool ??
@@ -54,7 +53,7 @@ class _SudokuPageState extends State<SudokuPage> {
     _game.addListener(_onGameChanged);
     _puzzlePool.preloadAll();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeGame();
+      unawaited(_initializeGame());
     });
   }
 
@@ -71,11 +70,12 @@ class _SudokuPageState extends State<SudokuPage> {
 
       if (progress == null) {
         const message = 'Could not resume your game';
-        final error = StateError("Progress is null");
+        final error = StateError('Progress is null');
         _showPersistenceError(message, error, null);
         await _loadGame();
         return;
       }
+      if (!mounted) return;
       final seed = progress['seed'] as int;
       final difficulty = SudokuDifficulty.values.firstWhere(
         (candidate) => candidate.name == progress['difficulty'],
@@ -103,7 +103,7 @@ class _SudokuPageState extends State<SudokuPage> {
       );
       if (!mounted) return;
       if (continueLastGame == true) {
-        printDebug("Loading $seed");
+        printDebug('Loading $seed');
         await _resumeLastGame(progress, gamePromise);
       } else {
         await _loadGame();
@@ -134,13 +134,17 @@ class _SudokuPageState extends State<SudokuPage> {
   }
 
   void _showPersistenceError(
-      String message, Object? error, Object? stackTrace) {
+    String message,
+    Object? error,
+    Object? stackTrace,
+  ) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$message${error == null ? '' : ": $error"}')),
     );
     printDebug(
-        '$message${error == null ? ' ' : ": $error"}${stackTrace ?? ''}');
+      '$message${error == null ? ' ' : ": $error"}${stackTrace ?? ''}',
+    );
   }
 
   String durationToString(int duration) {
@@ -169,7 +173,9 @@ class _SudokuPageState extends State<SudokuPage> {
       final nextInstance = seed == null
           ? await _puzzlePool.take(nextDifficulty)
           : await SudokuGenerator.create(
-              seed: seed, difficulty: nextDifficulty);
+              seed: seed,
+              difficulty: nextDifficulty,
+            );
       if (!mounted) return;
 
       _game.load(nextInstance);
@@ -215,8 +221,10 @@ class _SudokuPageState extends State<SudokuPage> {
     _session.markTouched();
   }
 
-  Future<void> _resumeLastGame(Map<String, dynamic> progress,
-      final Future<SudokuGenerator> gamePromise) async {
+  Future<void> _resumeLastGame(
+    Map<String, dynamic> progress,
+    final Future<SudokuGenerator> gamePromise,
+  ) async {
     if (_loadInProgress) return;
     _loadInProgress = true;
     setState(() => _loading = true);
@@ -278,7 +286,7 @@ class _SudokuPageState extends State<SudokuPage> {
       }
       if (!mounted) return;
 
-      showDialog<void>(
+      await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Puzzle complete'),
@@ -297,7 +305,7 @@ class _SudokuPageState extends State<SudokuPage> {
             FilledButton(
               onPressed: () {
                 Navigator.pop(dialogContext);
-                _loadGame();
+                unawaited(_loadGame());
               },
               child: const Text('New puzzle'),
             ),
@@ -310,14 +318,16 @@ class _SudokuPageState extends State<SudokuPage> {
         _lastIncorrectBoard = boardSignature;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text(
-                  'Not quite right yet. Check your entries and try again.')),
+            content: Text(
+              'Not quite right yet. Check your entries and try again.',
+            ),
+          ),
         );
       }
     }
   }
 
-  void _submitSeed(String rawSeed) {
+  Future<void> _submitSeed(String rawSeed) async {
     final seed = int.tryParse(rawSeed);
     if (seed == null || seed < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -325,7 +335,7 @@ class _SudokuPageState extends State<SudokuPage> {
       );
       return;
     }
-    _loadGame(seed: seed);
+    await _loadGame(seed: seed);
   }
 
   Future<void> _showScoreboard() async {
@@ -354,7 +364,10 @@ class _SudokuPageState extends State<SudokuPage> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final landscape = constraints.maxWidth > constraints.maxHeight;
-            final horizontalPadding = landscape ? 24.0 : 20.0;
+            final minDimension =
+                min(constraints.maxWidth, constraints.maxHeight);
+            final scaleFactor = max(0.5, min(1, minDimension / 500)).toDouble();
+            final horizontalPadding = scaleFactor * (landscape ? 24.0 : 20.0);
             final content = landscape
                 ? Row(
                     children: [
@@ -382,15 +395,15 @@ class _SudokuPageState extends State<SudokuPage> {
                           child: SingleChildScrollView(
                             child: Column(
                               children: [
-                                _buildHeader(context),
+                                _buildHeader(context, scaleFactor),
                                 const SizedBox(height: 10),
-                                _buildStatus(context),
+                                _buildStatus(context, scaleFactor),
                                 const SizedBox(height: 8),
-                                _buildSeedInput(context),
+                                _buildSeedInput(context, scaleFactor),
                                 const SizedBox(height: 12),
-                                _buildNumberPad(context),
+                                _buildNumberPad(context, scaleFactor),
                                 const SizedBox(height: 8),
-                                _buildActions(context),
+                                _buildActions(context, scaleFactor),
                               ],
                             ),
                           ),
@@ -398,39 +411,48 @@ class _SudokuPageState extends State<SudokuPage> {
                       ),
                     ],
                   )
-                : SingleChildScrollView(
-                    child: Padding(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: horizontalPadding),
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 8),
-                          _buildHeader(context),
-                          const SizedBox(height: 12),
-                          _buildStatus(context),
-                          const SizedBox(height: 8),
-                          _buildSeedInput(context),
-                          Center(
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: min(
-                                  600.0,
-                                  constraints.maxWidth - horizontalPadding * 2,
+                : Padding(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: horizontalPadding),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        _buildHeader(context, scaleFactor),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _buildStatus(context, scaleFactor),
+                              const SizedBox(height: 8),
+                              _buildSeedInput(context, scaleFactor),
+                              const SizedBox(height: 8),
+                              Expanded(
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: min(
+                                        600.0,
+                                        constraints.maxWidth -
+                                            horizontalPadding * 2,
+                                      ),
+                                    ),
+                                    child: SudokuBoard(
+                                      game: _game,
+                                      onCellSelected: (cell) =>
+                                          _selectCell(cell.$1, cell.$2),
+                                    ),
+                                  ),
                                 ),
                               ),
-                              child: SudokuBoard(
-                                game: _game,
-                                onCellSelected: (cell) =>
-                                    _selectCell(cell.$1, cell.$2),
-                              ),
-                            ),
+                              const SizedBox(height: 8),
+                              _buildNumberPad(context, scaleFactor),
+                              const SizedBox(height: 12),
+                              _buildActions(context, scaleFactor),
+                              const SizedBox(height: 12),
+                            ],
                           ),
-                          _buildNumberPad(context),
-                          const SizedBox(height: 12),
-                          _buildActions(context),
-                          const SizedBox(height: 12),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   );
 
@@ -446,7 +468,8 @@ class _SudokuPageState extends State<SudokuPage> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, double scaleFactor) {
+    final double textSize = 18 * scaleFactor;
     return Row(
       children: [
         Expanded(
@@ -459,12 +482,14 @@ class _SudokuPageState extends State<SudokuPage> {
                       color: Theme.of(context).colorScheme.primary,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 2,
+                      fontSize: textSize,
                     ),
               ),
               Text(
                 'A little space to focus.',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
+                      fontSize: textSize,
                     ),
               ),
             ],
@@ -474,25 +499,37 @@ class _SudokuPageState extends State<SudokuPage> {
           key: const ValueKey('scoreboard'),
           onPressed: _showScoreboard,
           tooltip: 'Scoreboard',
-          icon: const Icon(Icons.emoji_events_outlined),
+          style: IconButton.styleFrom(
+            minimumSize: Size.square(textSize * 8 / 3),
+            padding: EdgeInsets.all(textSize / 2),
+          ),
+          icon: Icon(Icons.emoji_events_outlined, size: textSize),
         ),
         const SizedBox(width: 8),
         FilledButton.tonalIcon(
           key: const ValueKey('new-puzzle'),
-          onPressed: _loading ? null : () => _loadGame(),
-          icon: const Icon(Icons.refresh_rounded),
-          label: const Text('New puzzle'),
+          onPressed: _loading ? null : _loadGame,
+          icon: Icon(Icons.refresh_rounded, size: textSize),
+          label: Text(
+            'New puzzle',
+            style: TextStyle(fontSize: textSize),
+          ),
+          style: FilledButton.styleFrom(
+            minimumSize: Size(0, textSize * 8 / 3),
+            padding: EdgeInsets.symmetric(horizontal: textSize),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildStatus(BuildContext context) {
+  Widget _buildStatus(BuildContext context, double scaleFactor) {
+    final textSize = 19 * sqrt(scaleFactor);
     return Row(
       children: [
         Expanded(
           child: Container(
-            height: 52,
+            height: 52 * scaleFactor,
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainer,
@@ -502,7 +539,7 @@ class _SudokuPageState extends State<SudokuPage> {
               children: [
                 Icon(
                   Icons.timer_outlined,
-                  size: 19,
+                  size: 19 * scaleFactor,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 8),
@@ -512,6 +549,7 @@ class _SudokuPageState extends State<SudokuPage> {
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontFeatures: const [FontFeature.tabularFigures()],
                     fontWeight: FontWeight.w700,
+                    fontSize: textSize,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -521,7 +559,7 @@ class _SudokuPageState extends State<SudokuPage> {
                       key: const ValueKey('difficulty'),
                       value: selectedDifficulty,
                       isExpanded: true,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(12 * scaleFactor),
                       items: SudokuDifficulty.values
                           .map(
                             (difficulty) => DropdownMenuItem(
@@ -529,6 +567,7 @@ class _SudokuPageState extends State<SudokuPage> {
                               child: Text(
                                 _capitalize(difficulty.name),
                                 overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: textSize),
                               ),
                             ),
                           )
@@ -538,7 +577,7 @@ class _SudokuPageState extends State<SudokuPage> {
                           : (difficulty) {
                               if (difficulty != null &&
                                   difficulty != selectedDifficulty) {
-                                _loadGame(difficulty: difficulty);
+                                unawaited(_loadGame(difficulty: difficulty));
                               }
                             },
                     ),
@@ -552,36 +591,46 @@ class _SudokuPageState extends State<SudokuPage> {
     );
   }
 
-  Widget _buildSeedInput(BuildContext context) {
-    return TextField(
-      key: const ValueKey('seed-input'),
-      controller: _seedController,
-      enabled: !_loading,
-      keyboardType: TextInputType.number,
-      textInputAction: TextInputAction.done,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      onSubmitted: _submitSeed,
-      decoration: InputDecoration(
-        prefixIcon: const Icon(Icons.tag_rounded),
-        labelText: 'Puzzle seed',
-        hintText: 'Enter a seed to replay a puzzle',
-        filled: true,
-        fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
-        contentPadding: const EdgeInsets.symmetric(vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
+  Widget _buildSeedInput(BuildContext context, double scaleFactor) {
+    final textStyle = TextStyle(fontSize: 19 * sqrt(scaleFactor));
+    return SizedBox(
+      height: 45 * scaleFactor,
+      child: TextField(
+        key: const ValueKey('seed-input'),
+        controller: _seedController,
+        enabled: !_loading,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        onSubmitted: _submitSeed,
+        style: textStyle,
+        decoration: InputDecoration(
+          prefixIcon: Icon(Icons.tag_rounded, size: 22 * scaleFactor),
+          labelText: 'Puzzle seed',
+          hintText: 'Enter a seed to replay a puzzle',
+          filled: true,
+          labelStyle: textStyle,
+          fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
+          contentPadding:
+              EdgeInsets.symmetric(vertical: (14 * scaleFactor).toDouble()),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular((16 * scaleFactor).toDouble()),
+            borderSide: BorderSide.none,
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildNumberPad(BuildContext context) => SudokuNumberPad(
+  Widget _buildNumberPad(BuildContext context, double scaleFactor) =>
+      SudokuNumberPad(
         game: _game,
         onNumberSelected: _selectNumber,
+        scaleFactor: scaleFactor,
       );
 
-  Widget _buildActions(BuildContext context) => SudokuActionBar(
+  Widget _buildActions(BuildContext context, double scaleFactor) =>
+      SudokuActionBar(
         game: _game,
         loading: _loading,
         onUndo: () {
@@ -590,6 +639,7 @@ class _SudokuPageState extends State<SudokuPage> {
         },
         onNotesChanged: _toggleNotes,
         onErase: () => _selectNumber(0),
+        scaleFactor: scaleFactor,
       );
 
   String _capitalize(String value) {

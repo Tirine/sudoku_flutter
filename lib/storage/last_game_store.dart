@@ -10,6 +10,7 @@ class LastGameStore {
     final preferences = await SharedPreferences.getInstance();
     final encoded = preferences.getString(_key);
     if (encoded == null) return null;
+
     final decoded = jsonDecode(encoded);
     if (decoded is! Map<String, dynamic> ||
         decoded['seed'] is! int ||
@@ -31,6 +32,7 @@ class LastGameStore {
     final preferences = await SharedPreferences.getInstance();
     final saved = await preferences.setString(_key, jsonEncode(progress));
     if (!saved) throw StateError('Could not save the current game.');
+
     final elapsedSaved = await preferences.setInt(
       _elapsedKey,
       progress['elapsedSeconds'] as int,

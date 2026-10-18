@@ -1,10 +1,11 @@
 import 'dart:async';
 
 import 'package:sudoku_flutter/game/sudoku_generator.dart';
-import 'package:sudoku_flutter/utils.dart';
 
 typedef SudokuFactory = Future<SudokuGenerator> Function(
-    SudokuDifficulty difficulty, int? seed);
+  SudokuDifficulty difficulty,
+  int? seed,
+);
 
 class SudokuPuzzlePool {
   SudokuPuzzlePool({
@@ -61,7 +62,8 @@ class SudokuPuzzlePool {
       // Keep background generation errors observable by `take` without
       // allowing an unconsumed preload failure to become an uncaught async error.
       unawaited(
-          future.then<void>((_) {}, onError: (Object _, StackTrace __) {}));
+        future.then<void>((_) {}, onError: (Object _, StackTrace __) {}),
+      );
     }
   }
 
@@ -82,15 +84,16 @@ class SudokuPuzzlePool {
         _pendingGenerations.isNotEmpty) {
       final pending = _pendingGenerations.removeAt(0);
       _activeGenerations++;
-      Future<SudokuGenerator>.sync(() => _create(pending.difficulty, null))
-          .then(
+      unawaited(
+          Future<SudokuGenerator>.sync(() => _create(pending.difficulty, null))
+              .then(
         pending.completer.complete,
         onError: pending.completer.completeError,
       )
-          .whenComplete(() {
+              .whenComplete(() {
         _activeGenerations--;
         _scheduleGenerations();
-      });
+      }),);
     }
   }
 }
