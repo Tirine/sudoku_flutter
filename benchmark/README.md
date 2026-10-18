@@ -54,8 +54,8 @@ Run the stage profile with:
 ```
 
 It profiles the same eight fixed seeds in-process and records total generation
-time, uniqueness-check count and time, logical-solve count and time, and the
-generated boards in [`results/solver_profile_latest.json`](./results/solver_profile_latest.json).
+time, uniqueness-check count and time, and the generated boards in
+[`results/solver_profile_latest.json`](./results/solver_profile_latest.json).
 The stage timers are opt-in diagnostics and are inactive during normal puzzle
 generation. Results identify where time is spent for these seeds; timings vary
 by host and are not pass/fail thresholds.

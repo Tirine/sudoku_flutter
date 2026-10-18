@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sudoku_flutter/game/sudoku_generator.dart';
-import 'package:sudoku_flutter/game/sudoku_logical_generator.dart';
 
 const _specialSeedDiagonals = <int, List<int>>{
   314159265: [3, 1, 4, 1, 5, 9, 2, 6, 5],
@@ -25,16 +24,17 @@ final _replaySeeds = <int>[
 void main() {
   late SudokuGenerator puzzle;
   late SudokuGenerator extremePuzzle;
-  late SudokuGenerator almostImpossiblePuzzle;
+  late SudokuGenerator secondExtremePuzzle;
 
   setUpAll(() async {
     puzzle = await SudokuGenerator.create(
-        seed: 123456,);
+      seed: 123456,
+    );
     extremePuzzle = await SudokuGenerator.create(
       seed: 654321,
       difficulty: SudokuDifficulty.extreme,
     );
-    almostImpossiblePuzzle = await SudokuGenerator.create(
+    secondExtremePuzzle = await SudokuGenerator.create(
       seed: 789012,
       difficulty: SudokuDifficulty.extreme,
     );
@@ -168,49 +168,38 @@ void main() {
     }
   });
 
-  test(
-      'extreme puzzle is unique and solvable without guessing',
-      () {
-    expect(_countSolutions(almostImpossiblePuzzle.board), 1);
-    expect(SudokuLogicalGenerator().canSolve(almostImpossiblePuzzle.board), isTrue);
+  test('extreme puzzle has one solution and at least 17 clues', () {
+    expect(_countSolutions(secondExtremePuzzle.board), 1);
 
-    final clueCount = almostImpossiblePuzzle.board
+    final clueCount = secondExtremePuzzle.board
         .expand((row) => row)
         .where((value) => value != 0)
         .length;
     expect(clueCount, greaterThanOrEqualTo(17));
   });
 
-  test(
-      'seed 79505584 produces a unique extreme puzzle',
-      () async {
+  test('seed 79505584 produces a unique extreme puzzle', () async {
     final seededPuzzle = await SudokuGenerator.create(
       seed: 79505584,
       difficulty: SudokuDifficulty.extreme,
     );
 
     expect(_countSolutions(seededPuzzle.board), 1);
-    expect(SudokuLogicalGenerator().canSolve(seededPuzzle.board), isTrue);
   });
 
-  test(
-      'extreme puzzle cannot lose another clue and stay valid',
-      () {
-    final logicalGenerator = SudokuLogicalGenerator();
+  test('extreme puzzle cannot lose another clue and stay unique', () {
     for (var row = 0; row < 9; row++) {
       for (var column = 0; column < 9; column++) {
-        if (almostImpossiblePuzzle.board[row][column] == 0) continue;
+        if (secondExtremePuzzle.board[row][column] == 0) continue;
 
         final withClueRemoved =
-            SudokuGenerator.cloneBoard(almostImpossiblePuzzle.board);
+            SudokuGenerator.cloneBoard(secondExtremePuzzle.board);
         withClueRemoved[row][column] = 0;
-        final stillUnique = _countSolutions(withClueRemoved) == 1;
-        final stillLogicallySolvable = logicalGenerator.canSolve(withClueRemoved);
         expect(
-          stillUnique && stillLogicallySolvable,
-          isFalse,
+          _countSolutions(withClueRemoved),
+          greaterThan(1),
           reason: 'Removing clue at row ${row + 1}, column ${column + 1} must '
-              'break uniqueness or require a technique this tier does not use.',
+              'break uniqueness.',
         );
       }
     }

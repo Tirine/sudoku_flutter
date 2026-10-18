@@ -17,7 +17,7 @@ const _profileCases = <({int seed, SudokuDifficulty difficulty})>[
 ];
 
 void main() {
-  test('profiles fixed-seed uniqueness and logical solving costs', () async {
+  test('profiles fixed-seed uniqueness costs', () async {
     final cases = <Map<String, Object>>[];
 
     for (final profileCase in _profileCases) {
@@ -33,25 +33,15 @@ void main() {
       expect(generator.initialised, isTrue);
       expect(generator.seed, profileCase.seed);
       expect(profile.uniquenessChecks, greaterThan(0));
-      if (profileCase.difficulty == SudokuDifficulty.extreme) {
-        expect(profile.logicalSolveChecks, greaterThan(0));
-      } else {
-        expect(profile.logicalSolveChecks, 0);
-      }
-
       final uniquenessMs = profile.uniquenessMicroseconds / 1000;
-      final logicalSolveMs = profile.logicalSolveMicroseconds / 1000;
       final result = <String, Object>{
         'seed': profileCase.seed,
         'difficulty': profileCase.difficulty.name,
         'generationMs': profile.generationMicroseconds / 1000,
         'uniquenessChecks': profile.uniquenessChecks,
         'uniquenessMs': uniquenessMs,
-        'logicalSolveChecks': profile.logicalSolveChecks,
-        'logicalSolveMs': logicalSolveMs,
-        'otherGenerationMs': (profile.generationMicroseconds / 1000) -
-            uniquenessMs -
-            logicalSolveMs,
+        'otherGenerationMs':
+            (profile.generationMicroseconds / 1000) - uniquenessMs,
         'puzzle': _flatten(generator.board),
         'solution': _flatten(generator.solution),
       };
@@ -62,9 +52,7 @@ void main() {
         '${profileCase.difficulty.name.padRight(7)} '
         'seed ${profileCase.seed.toString().padLeft(9)}: '
         '${profile.uniquenessChecks} uniqueness checks '
-        '(${uniquenessMs.toStringAsFixed(2)} ms), '
-        '${profile.logicalSolveChecks} logical checks '
-        '(${logicalSolveMs.toStringAsFixed(2)} ms)',
+        '(${uniquenessMs.toStringAsFixed(2)} ms)',
       );
     }
 

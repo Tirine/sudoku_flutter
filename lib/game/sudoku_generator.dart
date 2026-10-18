@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:math';
 
-import 'package:sudoku_flutter/game/sudoku_logical_generator.dart';
 import 'package:sudoku_flutter/utils.dart';
 
 typedef Board = List<List<int>>;
@@ -36,6 +35,7 @@ class SudokuGenerator {
   final Board _uniquenessBoard = createEmpty();
   final SudokuGenerationProfile? profile;
   final SudokuCellSelection _cellSelection;
+  final _SolverProgress _uniquenessProgress;
 
   static int _returnZero() => 0;
 
@@ -131,7 +131,8 @@ class SudokuGenerator {
     bool initialise = true,
   })  : _difficulty = difficulty,
         _seed = seed,
-        _cellSelection = cellSelection {
+        _cellSelection = cellSelection,
+        _uniquenessProgress = _SolverProgress(profile: profile) {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
@@ -148,7 +149,8 @@ class SudokuGenerator {
     this._solution,
     this._sudoku,
   )   : profile = null,
-        _cellSelection = SudokuCellSelection.rowMajor {
+        _cellSelection = SudokuCellSelection.rowMajor,
+        _uniquenessProgress = _SolverProgress() {
     if (_seed < 0) {
       _seed = Random.secure().nextInt(_randMax);
     }
@@ -263,7 +265,6 @@ class SudokuGenerator {
           sudoku,
           maxDepth: maxDepth,
           minFilled: minFilled,
-          requireLogicalSolve: _difficulty == SudokuDifficulty.extreme,
         );
         if (generated) return sudoku;
       } catch (e) {
@@ -313,7 +314,6 @@ class SudokuGenerator {
     Board board, {
     int minFilled = 0,
     int maxDepth = 20000,
-    bool requireLogicalSolve = false,
   }) {
     var rowI = _rand() - 1;
     var colI = _rand() - 1;
@@ -326,8 +326,6 @@ class SudokuGenerator {
     }
 
     var filled = _boardSize * _boardSize;
-    final logicalGenerator =
-        requireLogicalSolve ? SudokuLogicalGenerator() : null;
 
     for (int i = 0; i <= _boardSize; i++) {
       for (int j = 0; j <= _boardSize; j++) {
@@ -335,7 +333,6 @@ class SudokuGenerator {
           board,
           rowI,
           colI,
-          logicalGenerator: logicalGenerator,
           maxDepth: maxDepth,
         )) {
           filled--;
@@ -358,7 +355,6 @@ class SudokuGenerator {
     Board board,
     int row,
     int column, {
-    required SudokuLogicalGenerator? logicalGenerator,
     required int maxDepth,
   }) {
     if (board[row][column] == _noValue) return false;
@@ -376,17 +372,7 @@ class SudokuGenerator {
       return false;
     }
 
-    final clue = board[row][column];
     board[row][column] = _noValue;
-    if (logicalGenerator != null) {
-      profile?.startLogicalSolve();
-      final canSolve = logicalGenerator.canSolve(board);
-      profile?.finishLogicalSolve();
-      if (!canSolve) {
-        board[row][column] = clue;
-        return false;
-      }
-    }
     return true;
   }
 
@@ -514,7 +500,7 @@ class SudokuGenerator {
     final originalValue = board[row][column];
     final candidateBoard = _uniquenessBoard;
     _copyBoardInto(board, candidateBoard);
-    final progress = _SolverProgress(profile: profile);
+    final progress = _uniquenessProgress;
 
     for (int value = 1; value <= _boardSize; value++) {
       if (value == originalValue ||
@@ -552,8 +538,6 @@ class SudokuGenerationProfile {
   int generationMicroseconds = 0;
   int uniquenessChecks = 0;
   int uniquenessMicroseconds = 0;
-  int logicalSolveChecks = 0;
-  int logicalSolveMicroseconds = 0;
   int searchNodes = 0;
   int candidateAssignments = 0;
 
@@ -577,17 +561,5 @@ class SudokuGenerationProfile {
   void finishUniquenessCheck() {
     _stageWatch.stop();
     uniquenessMicroseconds += _stageWatch.elapsedMicroseconds;
-  }
-
-  void startLogicalSolve() {
-    logicalSolveChecks++;
-    _stageWatch
-      ..reset()
-      ..start();
-  }
-
-  void finishLogicalSolve() {
-    _stageWatch.stop();
-    logicalSolveMicroseconds += _stageWatch.elapsedMicroseconds;
   }
 }
